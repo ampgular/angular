@@ -45,6 +45,8 @@ export class BindingParser {
     }
   }
 
+  get interpolationConfig(): InterpolationConfig { return this._interpolationConfig; }
+
   getUsedPipes(): CompilePipeSummary[] { return Array.from(this._usedPipes.values()); }
 
   createBoundHostProperties(dirMeta: CompileDirectiveSummary, sourceSpan: ParseSourceSpan):
@@ -221,7 +223,7 @@ export class BindingParser {
 
   private _parseBinding(value: string, isHostBinding: boolean, sourceSpan: ParseSourceSpan):
       ASTWithSource {
-    const sourceInfo = sourceSpan.start.toString();
+    const sourceInfo = (sourceSpan && sourceSpan.start || '(unknown)').toString();
 
     try {
       const ast = isHostBinding ?
@@ -236,8 +238,9 @@ export class BindingParser {
     }
   }
 
-  createBoundElementProperty(elementSelector: string, boundProp: ParsedProperty):
-      BoundElementProperty {
+  createBoundElementProperty(
+      elementSelector: string, boundProp: ParsedProperty,
+      skipValidation: boolean = false): BoundElementProperty {
     if (boundProp.isAnimation) {
       return new BoundElementProperty(
           boundProp.name, BindingType.Animation, SecurityContext.NONE, boundProp.expression, null,
@@ -250,11 +253,13 @@ export class BindingParser {
     const parts = boundProp.name.split(PROPERTY_PARTS_SEPARATOR);
     let securityContexts: SecurityContext[] = undefined !;
 
-    // Check check for special cases (prefix style, attr, class)
+    // Check for special cases (prefix style, attr, class)
     if (parts.length > 1) {
       if (parts[0] == ATTRIBUTE_PREFIX) {
         boundPropertyName = parts[1];
-        this._validatePropertyOrAttributeName(boundPropertyName, boundProp.sourceSpan, true);
+        if (!skipValidation) {
+          this._validatePropertyOrAttributeName(boundPropertyName, boundProp.sourceSpan, true);
+        }
         securityContexts = calcPossibleSecurityContexts(
             this._schemaRegistry, elementSelector, boundPropertyName, true);
 
@@ -284,7 +289,9 @@ export class BindingParser {
       securityContexts = calcPossibleSecurityContexts(
           this._schemaRegistry, elementSelector, boundPropertyName, false);
       bindingType = BindingType.Property;
-      this._validatePropertyOrAttributeName(boundPropertyName, boundProp.sourceSpan, false);
+      if (!skipValidation) {
+        this._validatePropertyOrAttributeName(boundPropertyName, boundProp.sourceSpan, false);
+      }
     }
 
     return new BoundElementProperty(
@@ -301,6 +308,12 @@ export class BindingParser {
     } else {
       this._parseRegularEvent(name, expression, sourceSpan, targetMatchableAttrs, targetEvents);
     }
+  }
+
+  calcPossibleSecurityContexts(selector: string, propName: string, isAttribute: boolean):
+      SecurityContext[] {
+    const prop = this._schemaRegistry.getMappedPropName(propName);
+    return calcPossibleSecurityContexts(this._schemaRegistry, selector, prop, isAttribute);
   }
 
   private _parseAnimationEvent(
@@ -343,7 +356,7 @@ export class BindingParser {
   }
 
   private _parseAction(value: string, sourceSpan: ParseSourceSpan): ASTWithSource {
-    const sourceInfo = sourceSpan.start.toString();
+    const sourceInfo = (sourceSpan && sourceSpan.start || '(unknown').toString();
 
     try {
       const ast = this._exprParser.parseAction(value, sourceInfo, this._interpolationConfig);

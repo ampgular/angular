@@ -50,13 +50,18 @@ const BOILERPLATE_PATHS = {
 // This maps the CLI files that exists in a parent folder
 const cliRelativePath = BOILERPLATE_PATHS.cli.map(file => `../cli/${file}`);
 
+BOILERPLATE_PATHS.elements = [
+  ...cliRelativePath,
+  'tsconfig.json'
+];
+
 BOILERPLATE_PATHS.i18n = [
   ...cliRelativePath,
   'angular.json',
   'package.json'
 ];
 
-BOILERPLATE_PATHS.universal = [
+BOILERPLATE_PATHS['service-worker'] = [
   ...cliRelativePath,
   'angular.json',
   'package.json'
@@ -65,6 +70,12 @@ BOILERPLATE_PATHS.universal = [
 BOILERPLATE_PATHS.testing = [
   ...cliRelativePath,
   'angular.json'
+];
+
+BOILERPLATE_PATHS.universal = [
+  ...cliRelativePath,
+  'angular.json',
+  'package.json'
 ];
 
 const EXAMPLE_CONFIG_FILENAME = 'example-config.json';
