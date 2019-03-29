@@ -112,6 +112,12 @@ export interface CompilerOptions extends ts.CompilerOptions {
   // This will be true be default in Angular 6.
   fullTemplateTypeCheck?: boolean;
 
+  // Whether to use the CompilerHost's fileNameToModuleName utility (if available) to generate
+  // import module specifiers. This is false by default, and exists to support running ngtsc
+  // within Google. This option is internal and is used by the ng_module.bzl rule to switch
+  // behavior between Bazel and Blaze.
+  _useHostForImportGeneration?: boolean;
+
   // Insert JSDoc type annotations needed by Closure Compiler
   annotateForClosureCompiler?: boolean;
 
@@ -188,9 +194,8 @@ export interface CompilerOptions extends ts.CompilerOptions {
    * Acceptable values are as follows:
    *
    * `false` - run ngc normally
-   * `true` - run ngc with its usual global analysis, but compile decorators to Ivy fields instead
-   *  of running the View Engine compilers
-   * `ngtsc` - run the ngtsc compiler instead of the normal ngc compiler
+   * `true` - run the ngtsc compiler instead of the normal ngc compiler
+   * `ngtsc` - alias for `true`
    * `tsc` - behave like plain tsc as much as possible (used for testing JIT code)
    *
    * @publicApi
@@ -199,6 +204,15 @@ export interface CompilerOptions extends ts.CompilerOptions {
 
   /** @internal */
   collectAllErrors?: boolean;
+
+  /**
+   * Whether NGC should generate re-exports for external symbols which are referenced
+   * in Angular metadata (e.g. @Component, @Inject, @ViewChild). This can be enabled in
+   * order to avoid dynamically generated module dependencies which can break strict
+   * dependency enforcements. This is not enabled by default.
+   * Read more about this here: https://github.com/angular/angular/issues/25644.
+   */
+  createExternalSymbolFactoryReexports?: boolean;
 }
 
 export interface CompilerHost extends ts.CompilerHost {

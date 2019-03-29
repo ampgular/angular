@@ -6,17 +6,17 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {Attribute, ChangeDetectorRef, ElementRef, Host, INJECTOR, Inject, InjectFlags, Injector, Optional, Renderer2, Self, SkipSelf, TemplateRef, ViewContainerRef, createInjector, defineInjectable, defineInjector} from '@angular/core';
+import {Attribute, ChangeDetectorRef, ElementRef, Host, INJECTOR, Inject, InjectFlags, Injector, Optional, Renderer2, Self, SkipSelf, TemplateRef, ViewContainerRef, defineInjectable, defineInjector} from '@angular/core';
 import {ComponentType, RenderFlags} from '@angular/core/src/render3/interfaces/definition';
 
 import {defineComponent} from '../../src/render3/definition';
 import {bloomAdd, bloomHasToken, bloomHashBitOrFactory as bloomHash, getOrCreateNodeInjectorForNode} from '../../src/render3/di';
 import {ProvidersFeature, defineDirective, elementProperty, load, templateRefExtractor} from '../../src/render3/index';
 
-import {allocHostVars, bind, container, containerRefreshEnd, containerRefreshStart, createNodeAtIndex, createLView, createTView, directiveInject, element, elementEnd, elementStart, embeddedViewEnd, embeddedViewStart, injectAttribute, interpolation2, projection, projectionDef, reference, template, text, textBinding, elementContainerStart, elementContainerEnd} from '../../src/render3/instructions';
+import {allocHostVars, bind, container, containerRefreshEnd, containerRefreshStart, createNodeAtIndex, createLView, createTView, directiveInject, element, elementEnd, elementStart, embeddedViewEnd, embeddedViewStart, injectAttribute, interpolation2, projection, projectionDef, reference, template, text, textBinding, elementContainerStart, elementContainerEnd} from '../../src/render3/instructions/all';
 import {isProceduralRenderer, RElement} from '../../src/render3/interfaces/renderer';
 import {AttributeMarker, TNodeType} from '../../src/render3/interfaces/node';
-import {getNativeByIndex} from '../../src/render3/util';
+import {getNativeByIndex} from '../../src/render3/util/view_utils';
 import {LViewFlags} from '../../src/render3/interfaces/view';
 import {enterView, leaveView, getLView} from '../../src/render3/state';
 import {ViewRef} from '../../src/render3/view_ref';
@@ -25,6 +25,7 @@ import {getRendererFactory2} from './imported_renderer2';
 import {ComponentFixture, createComponent, createDirective, getDirectiveOnNode, renderComponent, toHtml} from './render_util';
 import {NgIf} from './common_with_def';
 import {TNODE} from '../../src/render3/interfaces/injector';
+import {createInjector} from '../../src/di/r3_injector';
 import {LContainer, NATIVE} from '../../src/render3/interfaces/container';
 
 describe('di', () => {
@@ -183,7 +184,7 @@ describe('di', () => {
           consts: 0,
           vars: 0,
           factory: () => new Comp(directiveInject(DirB)),
-          template: (ctx: any, fm: boolean) => {}
+          template: (rf: RenderFlags, ctx: Comp) => {}
         });
       }
 
@@ -489,7 +490,7 @@ describe('di', () => {
         const App = createComponent('app', (rf: RenderFlags, ctx: any) => {
           if (rf & RenderFlags.Create) {
             elementStart(0, 'div', ['dirB', '']);
-            { template(1, IfTemplate, 4, 1, 'div', [AttributeMarker.SelectOnly, 'ngIf', '']); }
+            { template(1, IfTemplate, 4, 1, 'div', [AttributeMarker.Template, 'ngIf']); }
             elementEnd();
           }
           if (rf & RenderFlags.Update) {
@@ -1244,7 +1245,10 @@ describe('di', () => {
           const App = createComponent('app', function(rf: RenderFlags, ctx: any) {
             if (rf & RenderFlags.Create) {
               elementStart(0, 'div', ['dirB', '']);
-              { template(1, IfTemplate, 1, 0, 'div', ['ngIf', '']); }
+              {
+                template(
+                    1, IfTemplate, 1, 0, 'div', ['dirA', '', AttributeMarker.Template, 'ngIf']);
+              }
               elementEnd();
             }
             if (rf & RenderFlags.Update) {
@@ -1531,7 +1535,7 @@ describe('di', () => {
           if (rf & RenderFlags.Create) {
             elementStart(0, 'div', ['dir', '', 'dirSame', '']);
             elementEnd();
-            div = getNativeByIndex(0, getLView());
+            div = getNativeByIndex(0, getLView()) as RElement;
           }
         }, 1, 0, [Directive, DirectiveSameInstance]);
 
@@ -1786,7 +1790,7 @@ describe('di', () => {
 
       it('should inject current component ChangeDetectorRef into directives on the same node as components',
          () => {
-           /** <my-comp dir dirSameInstance #dir="dir"></my-comp> {{ dir.value }} */
+           /** <my-comp dir dirSame #dir="dir"></my-comp> {{ dir.value }} */
            const MyApp = createComponent('my-app', function(rf: RenderFlags, ctx: any) {
              if (rf & RenderFlags.Create) {
                element(0, 'my-comp', ['dir', '', 'dirSame', ''], ['dir', 'dir']);
@@ -1820,7 +1824,7 @@ describe('di', () => {
                consts: 3,
                vars: 1,
                factory: () => new MyApp(directiveInject(ChangeDetectorRef as any)),
-               /** <div dir dirSameInstance #dir="dir"> {{ dir.value }} </div> */
+               /** <div dir dirSame #dir="dir"> {{ dir.value }} </div> */
                template: function(rf: RenderFlags, ctx: any) {
                  if (rf & RenderFlags.Create) {
                    elementStart(0, 'div', ['dir', '', 'dirSame', ''], ['dir', 'dir']);
@@ -1858,7 +1862,7 @@ describe('di', () => {
                factory: () => new MyApp(directiveInject(ChangeDetectorRef as any)),
                /**
                 * <my-comp>
-                *   <div dir dirSameInstance #dir="dir"></div>
+                *   <div dir dirSame #dir="dir"></div>
                 * </my-comp>
                 * {{ dir.value }}
                 */
@@ -1902,7 +1906,7 @@ describe('di', () => {
             vars: 0,
             /**
              * % if (showing) {
-           *   <div dir dirSameInstance #dir="dir"> {{ dir.value }} </div>
+           *   <div dir dirSame #dir="dir"> {{ dir.value }} </div>
            * % }
              */
             template: function(rf: RenderFlags, ctx: MyApp) {
@@ -1966,10 +1970,15 @@ describe('di', () => {
             factory: () => new MyApp(directiveInject(ChangeDetectorRef as any)),
             consts: 1,
             vars: 0,
-            /** <div *ngIf="showing" dir dirSameInstance #dir="dir"> {{ dir.value }} </div> */
+            /** <div *ngIf="showing" dir dirSame #dir="dir"> {{ dir.value }} </div> */
             template: function(rf: RenderFlags, ctx: MyApp) {
               if (rf & RenderFlags.Create) {
-                template(0, C1, 3, 1, 'div', ['ngIf', 'showing']);
+                template(
+                    0, C1, 3, 1, 'div',
+                    ['dir', '', 'dirSame', '', AttributeMarker.Template, 'ngIf']);
+              }
+              if (rf & RenderFlags.Update) {
+                elementProperty(0, 'ngIf', bind(ctx.showing));
               }
             },
             directives: directives
@@ -2134,7 +2143,7 @@ describe('di', () => {
 
       const MyApp = createComponent('my-app', function(rf: RenderFlags, ctx: any) {
         if (rf & RenderFlags.Create) {
-          elementStart(0, 'div', ['exist', 'existValue', AttributeMarker.SelectOnly, 'nonExist']);
+          elementStart(0, 'div', ['exist', 'existValue', AttributeMarker.Bindings, 'nonExist']);
           exist = injectAttribute('exist');
           nonExist = injectAttribute('nonExist');
         }
@@ -2152,7 +2161,7 @@ describe('di', () => {
       const MyApp = createComponent('my-app', function(rf: RenderFlags, ctx: any) {
         if (rf & RenderFlags.Create) {
           elementStart(0, 'div', [
-            'exist', 'existValue', AttributeMarker.SelectOnly, 'binding1', 'nonExist', 'binding2'
+            'exist', 'existValue', AttributeMarker.Bindings, 'binding1', 'nonExist', 'binding2'
           ]);
           exist = injectAttribute('exist');
           nonExist = injectAttribute('nonExist');
@@ -2319,8 +2328,8 @@ describe('di', () => {
   describe('getOrCreateNodeInjector', () => {
     it('should handle initial undefined state', () => {
       const contentView = createLView(
-          null, createTView(-1, null, 1, 0, null, null, null), null, LViewFlags.CheckAlways,
-          {} as any, {} as any);
+          null, createTView(-1, null, 1, 0, null, null, null, null), null, LViewFlags.CheckAlways,
+          null, null, {} as any, {} as any);
       const oldView = enterView(contentView, null);
       try {
         const parentTNode = createNodeAtIndex(0, TNodeType.Element, null, null, null);

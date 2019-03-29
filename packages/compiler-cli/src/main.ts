@@ -54,8 +54,7 @@ export function mainDiagnosticsForTest(
 }
 
 function createEmitCallback(options: api.CompilerOptions): api.TsEmitCallback|undefined {
-  const transformDecorators = options.enableIvy !== 'ngtsc' && options.enableIvy !== 'tsc' &&
-      options.annotationsAs !== 'decorators';
+  const transformDecorators = !options.enableIvy && options.annotationsAs !== 'decorators';
   const transformTypesToClosure = options.annotateForClosureCompiler;
   if (!transformDecorators && !transformTypesToClosure) {
     return undefined;
@@ -115,7 +114,7 @@ function createEmitCallback(options: api.CompilerOptions): api.TsEmitCallback|un
 
 export interface NgcParsedConfiguration extends ParsedConfiguration { watch?: boolean; }
 
-function readNgcCommandLineAndConfiguration(args: string[]): NgcParsedConfiguration {
+export function readNgcCommandLineAndConfiguration(args: string[]): NgcParsedConfiguration {
   const options: api.CompilerOptions = {};
   const parsedArgs = require('minimist')(args);
   if (parsedArgs.i18nFile) options.i18nInFile = parsedArgs.i18nFile;
@@ -166,18 +165,33 @@ export function readCommandLineAndConfiguration(
   };
 }
 
+function getFormatDiagnosticsHost(options?: api.CompilerOptions): ts.FormatDiagnosticsHost {
+  const basePath = options ? options.basePath : undefined;
+  return {
+    getCurrentDirectory: () => basePath || ts.sys.getCurrentDirectory(),
+    // We need to normalize the path separators here because by default, TypeScript
+    // compiler hosts use posix canonical paths. In order to print consistent diagnostics,
+    // we also normalize the paths.
+    getCanonicalFileName: fileName => fileName.replace(/\\/g, '/'),
+    getNewLine: () => {
+      // Manually determine the proper new line string based on the passed compiler
+      // options. There is no public TypeScript function that returns the corresponding
+      // new line string. see: https://github.com/Microsoft/TypeScript/issues/29581
+      if (options && options.newLine !== undefined) {
+        return options.newLine === ts.NewLineKind.LineFeed ? '\n' : '\r\n';
+      }
+      return ts.sys.newLine;
+    },
+  };
+}
+
 function reportErrorsAndExit(
     allDiagnostics: Diagnostics, options?: api.CompilerOptions,
     consoleError: (s: string) => void = console.error): number {
   const errorsAndWarnings = filterErrorsAndWarnings(allDiagnostics);
   if (errorsAndWarnings.length) {
-    let currentDir = options ? options.basePath : undefined;
-    const formatHost: ts.FormatDiagnosticsHost = {
-      getCurrentDirectory: () => currentDir || ts.sys.getCurrentDirectory(),
-      getCanonicalFileName: fileName => fileName,
-      getNewLine: () => ts.sys.newLine
-    };
-    if (options && (options.enableIvy === true || options.enableIvy === 'ngtsc')) {
+    const formatHost = getFormatDiagnosticsHost(options);
+    if (options && options.enableIvy === true) {
       const ngDiagnostics = errorsAndWarnings.filter(api.isNgDiagnostic);
       const tsDiagnostics = errorsAndWarnings.filter(api.isTsDiagnostic);
       consoleError(replaceTsWithNgInErrors(
@@ -193,7 +207,7 @@ function reportErrorsAndExit(
 export function watchMode(
     project: string, options: api.CompilerOptions, consoleError: (s: string) => void) {
   return performWatchCompilation(createPerformWatchHost(project, diagnostics => {
-    consoleError(formatDiagnostics(diagnostics));
+    consoleError(formatDiagnostics(diagnostics, getFormatDiagnosticsHost(options)));
   }, options, options => createEmitCallback(options)));
 }
 

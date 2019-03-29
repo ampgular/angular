@@ -6,16 +6,18 @@
  * found in the LICENSE file at https://angular.io/license
  */
 import {LifecycleHooksFeature, renderComponent, whenRendered} from './component';
-import {defineBase, defineComponent, defineDirective, defineNgModule, definePipe} from './definition';
-import {getComponent, getHostElement, getRenderedText} from './discovery_utils';
+import {defineBase, defineComponent, defineDirective, defineNgModule, definePipe, setComponentScope} from './definition';
 import {InheritDefinitionFeature} from './features/inherit_definition_feature';
+import {NgOnChangesFeature} from './features/ng_onchanges_feature';
 import {ProvidersFeature} from './features/providers_feature';
 import {BaseDef, ComponentDef, ComponentDefWithMeta, ComponentTemplate, ComponentType, DirectiveDef, DirectiveDefFlags, DirectiveDefWithMeta, DirectiveType, PipeDef, PipeDefWithMeta} from './interfaces/definition';
+import {getComponent, getDirectives, getHostElement, getRenderedText} from './util/discovery_utils';
 
 export {ComponentFactory, ComponentFactoryResolver, ComponentRef, injectComponentFactoryResolver} from './component_ref';
 export {getFactoryOf, getInheritedFactory} from './di';
 export {RenderFlags} from './interfaces/definition';
 export {CssSelectorList} from './interfaces/projection';
+
 
 
 // clang-format off
@@ -50,10 +52,18 @@ export {
   elementContainerStart,
   elementContainerEnd,
   elementStyling,
-  elementHostAttrs,
   elementStylingMap,
   elementStyleProp,
   elementStylingApply,
+
+  elementHostAttrs,
+  elementHostStyling,
+  elementHostStylingMap,
+  elementHostStyleProp,
+  elementHostClassProp,
+  elementHostStylingApply,
+
+  select,
 
   listener,
   store,
@@ -82,7 +92,7 @@ export {
   injectAttribute,
 
   getCurrentView
-} from './instructions';
+} from './instructions/all';
 
 export {
   restoreView,
@@ -104,7 +114,7 @@ export {
 export {NgModuleFactory, NgModuleRef, NgModuleType} from './ng_module_ref';
 
 export {
-    AttributeMarker
+  AttributeMarker
 } from './interfaces/node';
 
 export {
@@ -121,13 +131,14 @@ export {
 } from './pipe';
 
 export {
-  query,
   queryRefresh,
+  viewQuery,
+  staticViewQuery,
+  loadViewQuery,
+  contentQuery,
+  loadContentQuery,
+  staticContentQuery
 } from './query';
-export  {
-  registerContentQuery,
-  loadQueryList,
-} from './instructions';
 
 export {
   pureFunction0,
@@ -144,7 +155,7 @@ export {
 
 export {templateRefExtractor} from './view_engine_compatibility_prebound';
 
-export {resolveWindow, resolveDocument, resolveBody} from './util';
+export {resolveWindow, resolveDocument, resolveBody} from './util/misc_utils';
 
 // clang-format on
 
@@ -158,6 +169,7 @@ export {
   DirectiveDefFlags,
   DirectiveDefWithMeta,
   DirectiveType,
+  NgOnChangesFeature,
   InheritDefinitionFeature,
   ProvidersFeature,
   PipeDef,
@@ -170,8 +182,10 @@ export {
   definePipe,
   getHostElement,
   getComponent,
+  getDirectives,
   getRenderedText,
   renderComponent,
+  setComponentScope,
   whenRendered,
 };
 

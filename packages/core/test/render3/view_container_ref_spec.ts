@@ -6,22 +6,23 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {ChangeDetectorRef, Component as _Component, ComponentFactoryResolver, ElementRef, EmbeddedViewRef, NgModuleRef, Pipe, PipeTransform, QueryList, RendererFactory2, TemplateRef, ViewContainerRef, createInjector, defineInjector, ɵAPP_ROOT as APP_ROOT, ɵNgModuleDef as NgModuleDef} from '../../src/core';
+import {ChangeDetectorRef, Component as _Component, ComponentFactoryResolver, ComponentRef, defineInjector, ElementRef, EmbeddedViewRef, NgModuleRef, Pipe, PipeTransform, QueryList, RendererFactory2, TemplateRef, ViewContainerRef, ViewRef, ɵAPP_ROOT as APP_ROOT, ɵNgModuleDef as NgModuleDef,} from '../../src/core';
+import {createInjector} from '../../src/di/r3_injector';
 import {ViewEncapsulation} from '../../src/metadata';
-import {AttributeMarker, defineComponent, defineDirective, definePipe, injectComponentFactoryResolver, load, query, queryRefresh} from '../../src/render3/index';
+import {AttributeMarker, defineComponent, defineDirective, definePipe, injectComponentFactoryResolver, listener, loadViewQuery, NgOnChangesFeature, queryRefresh, viewQuery,} from '../../src/render3/index';
 
-import {allocHostVars, bind, container, containerRefreshEnd, containerRefreshStart, directiveInject, element, elementEnd, elementProperty, elementStart, embeddedViewEnd, embeddedViewStart, interpolation1, interpolation3, nextContext, projection, projectionDef, reference, template, text, textBinding, elementHostAttrs} from '../../src/render3/instructions';
+import {allocHostVars, bind, container, containerRefreshEnd, containerRefreshStart, directiveInject, element, elementEnd, elementHostAttrs, elementProperty, elementStart, embeddedViewEnd, embeddedViewStart, interpolation1, interpolation3, nextContext, projection, projectionDef, reference, template, text, textBinding,} from '../../src/render3/instructions/all';
 import {RenderFlags} from '../../src/render3/interfaces/definition';
 import {RElement} from '../../src/render3/interfaces/renderer';
-import {templateRefExtractor} from '../../src/render3/view_engine_compatibility_prebound';
 import {NgModuleFactory} from '../../src/render3/ng_module_ref';
 import {pipe, pipeBind1} from '../../src/render3/pipe';
 import {getLView} from '../../src/render3/state';
-import {getNativeByIndex} from '../../src/render3/util';
+import {getNativeByIndex} from '../../src/render3/util/view_utils';
+import {templateRefExtractor} from '../../src/render3/view_engine_compatibility_prebound';
 import {NgForOf} from '../../test/render3/common_with_def';
 
 import {getRendererFactory2} from './imported_renderer2';
-import {ComponentFixture, TemplateFixture, createComponent, getDirectiveOnNode} from './render_util';
+import {ComponentFixture, createComponent, getDirectiveOnNode, TemplateFixture,} from './render_util';
 
 const Component: typeof _Component = function(...args: any[]): any {
   // In test we use @Component for documentation only so it's safe to mock out the implementation.
@@ -41,11 +42,13 @@ describe('ViewContainerRef', () => {
       factory: () => directiveInstance = new DirectiveWithVCRef(
 
                    directiveInject(ViewContainerRef as any), injectComponentFactoryResolver()),
-      inputs: {tplRef: 'tplRef'}
+      inputs: {tplRef: 'tplRef', name: 'name'}
     });
 
     // TODO(issue/24571): remove '!'.
     tplRef !: TemplateRef<{}>;
+
+    name: string = '';
 
     // injecting a ViewContainerRef to create a dynamic container in which embedded views will be
     // created
@@ -539,7 +542,7 @@ describe('ViewContainerRef', () => {
                vars: 2,
                template: function(rf: RenderFlags, ctx: any) {
                  if (rf & RenderFlags.Create) {
-                   elementStart(0, 'div', [AttributeMarker.SelectOnly, 'tplDir']);
+                   elementStart(0, 'div', [AttributeMarker.Bindings, 'tplDir']);
                    { text(1); }
                    elementEnd();
                  }
@@ -625,7 +628,7 @@ describe('ViewContainerRef', () => {
             vars: 2,
             template: function(rf: RenderFlags, loop: any) {
               if (rf & RenderFlags.Create) {
-                template(0, null, 0, 0, 'ng-template', [AttributeMarker.SelectOnly, 'ngForOf']);
+                template(0, null, 0, 0, 'ng-template', [AttributeMarker.Bindings, 'ngForOf']);
               }
 
               if (rf & RenderFlags.Update) {
@@ -1631,6 +1634,7 @@ describe('ViewContainerRef', () => {
             textBinding(0, interpolation1('', cmp.name, ''));
           }
         },
+        features: [NgOnChangesFeature()],
         inputs: {name: 'name'}
       });
     }
@@ -1676,7 +1680,8 @@ describe('ViewContainerRef', () => {
               elementProperty(3, 'name', bind('B'));
             }
           },
-          directives: [ComponentWithHooks, DirectiveWithVCRef]
+          directives: [ComponentWithHooks, DirectiveWithVCRef],
+          features: [NgOnChangesFeature()],
         });
       }
 
@@ -1768,7 +1773,8 @@ describe('ViewContainerRef', () => {
               elementProperty(1, 'name', bind('B'));
             }
           },
-          directives: [ComponentWithHooks, DirectiveWithVCRef]
+          directives: [ComponentWithHooks, DirectiveWithVCRef],
+          features: [NgOnChangesFeature()],
         });
       }
 
@@ -1795,7 +1801,6 @@ describe('ViewContainerRef', () => {
       expect(fixture.html).toEqual('<hooks vcref="">A</hooks><hooks></hooks><hooks>B</hooks>');
       expect(log).toEqual([]);
 
-      // Below will *NOT* cause onChanges to fire, because only bindings trigger onChanges
       componentRef.instance.name = 'D';
       log.length = 0;
       fixture.update();
@@ -1857,7 +1862,7 @@ describe('ViewContainerRef', () => {
           template: (rf: RenderFlags, cmp: HostBindingCmpt) => {},
           hostBindings: function(rf: RenderFlags, ctx: HostBindingCmpt, elIndex: number) {
             if (rf & RenderFlags.Create) {
-              elementHostAttrs(ctx, ['id', 'attribute']);
+              elementHostAttrs(['id', 'attribute']);
               allocHostVars(1);
             }
             if (rf & RenderFlags.Update) {
@@ -2058,18 +2063,19 @@ describe('ViewContainerRef', () => {
           vars: 0,
           template: (rf: RenderFlags, ctx: DynamicCompWithViewQueries) => {
             if (rf & RenderFlags.Create) {
-              element(1, 'div', ['bar', ''], ['foo', '']);
+              element(0, 'div', ['bar', ''], ['foo', '']);
             }
             // testing only
-            fooEl = getNativeByIndex(1, getLView());
+            fooEl = getNativeByIndex(0, getLView()) as RElement;
           },
           viewQuery: function(rf: RenderFlags, ctx: any) {
             if (rf & RenderFlags.Create) {
-              query(0, ['foo'], true);
+              viewQuery(['foo'], true, null);
             }
             if (rf & RenderFlags.Update) {
               let tmp: any;
-              queryRefresh(tmp = load<QueryList<any>>(0)) && (ctx.foo = tmp as QueryList<any>);
+              queryRefresh(tmp = loadViewQuery<QueryList<any>>()) &&
+                  (ctx.foo = tmp as QueryList<any>);
             }
           }
         });
@@ -2083,5 +2089,57 @@ describe('ViewContainerRef', () => {
       expect(dynamicComp.foo.first.nativeElement).toEqual(fooEl as any);
     });
 
+  });
+
+  describe('view destruction', () => {
+    class CompWithListenerThatDestroysItself {
+      constructor(private viewRef: ViewRef) {}
+
+      onClick() {}
+
+      ngOnDestroy() { this.viewRef.destroy(); }
+
+      static ngComponentDef = defineComponent({
+        type: CompWithListenerThatDestroysItself,
+        selectors: [['comp-with-listener-and-on-destroy']],
+        consts: 2,
+        vars: 0,
+        /** <button (click)="onClick()"> Click me </button> */
+        template: function CompTemplate(rf: RenderFlags, ctx: any) {
+          if (rf & RenderFlags.Create) {
+            elementStart(0, 'button');
+            {
+              listener('click', function() { return ctx.onClick(); });
+              text(1, 'Click me');
+            }
+            elementEnd();
+          }
+        },
+        // We want the ViewRef, so we rely on the knowledge that `ViewRef` is actually given
+        // when injecting `ChangeDetectorRef`.
+        factory:
+            () => new CompWithListenerThatDestroysItself(directiveInject(ChangeDetectorRef as any)),
+      });
+    }
+
+
+    it('should not error when destroying a view with listeners twice', () => {
+      const CompWithChildListener = createComponent('test-app', (rf: RenderFlags, ctx: any) => {
+        if (rf & RenderFlags.Create) {
+          element(0, 'comp-with-listener-and-on-destroy');
+        }
+      }, 1, 0, [CompWithListenerThatDestroysItself]);
+
+      const fixture = new ComponentFixture(CompWithChildListener);
+      fixture.update();
+
+      // Destroying the parent view will also destroy all of its children views and call their
+      // onDestroy hooks. Here, our child view attempts to destroy itself *again* in its onDestroy.
+      // This test exists to verify that no errors are thrown when doing this. We want the test
+      // component to destroy its own view in onDestroy because the destroy hooks happen as a
+      // *part of* view destruction. We also ensure that the test component has at least one
+      // listener so that it runs the event listener cleanup code path.
+      fixture.destroy();
+    });
   });
 });

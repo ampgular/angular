@@ -13,19 +13,18 @@ import {Type} from '../interface/type';
 import {ElementRef as ViewEngine_ElementRef} from '../linker/element_ref';
 import {QueryList} from '../linker/query_list';
 import {TemplateRef as ViewEngine_TemplateRef} from '../linker/template_ref';
-import {assertDefined, assertEqual} from '../util/assert';
+import {assertDataInRange, assertDefined, assertEqual} from '../util/assert';
 
 import {assertPreviousIsParent} from './assert';
 import {getNodeInjectable, locateDirectiveOrProvider} from './di';
 import {NG_ELEMENT_ID} from './fields';
-import {store, storeCleanupWithContext} from './instructions';
+import {load, store, storeCleanupWithContext} from './instructions/all';
 import {unusedValueExportToPlacateAjd as unused1} from './interfaces/definition';
 import {unusedValueExportToPlacateAjd as unused2} from './interfaces/injector';
 import {TContainerNode, TElementContainerNode, TElementNode, TNode, TNodeType, unusedValueExportToPlacateAjd as unused3} from './interfaces/node';
 import {LQueries, unusedValueExportToPlacateAjd as unused4} from './interfaces/query';
-import {LView, TVIEW} from './interfaces/view';
-import {getIsParent, getLView, getOrCreateCurrentQueries} from './state';
-import {isContentQueryHost} from './util';
+import {CONTENT_QUERIES, HEADER_OFFSET, LView, QUERIES, TVIEW} from './interfaces/view';
+import {getCurrentQueryIndex, getIsParent, getLView, isCreationMode, setCurrentQueryIndex} from './state';
 import {createElementRef, createTemplateRef} from './view_engine_compatibility';
 
 const unusedValueToPlacateAjd = unused1 + unused2 + unused3 + unused4;
@@ -107,7 +106,6 @@ export class LQueries_ implements LQueries {
   container(): LQueries|null {
     const shallowResults = copyQueriesToContainer(this.shallow);
     const deepResults = copyQueriesToContainer(this.deep);
-
     return shallowResults || deepResults ? new LQueries_(this, shallowResults, deepResults) : null;
   }
 
@@ -123,32 +121,15 @@ export class LQueries_ implements LQueries {
     insertView(index, this.deep);
   }
 
-  addNode(tNode: TElementNode|TContainerNode|TElementContainerNode): LQueries|null {
+  addNode(tNode: TElementNode|TContainerNode|TElementContainerNode): void {
     add(this.deep, tNode);
-
-    if (isContentQueryHost(tNode)) {
-      add(this.shallow, tNode);
-
-      if (tNode.parent && isContentQueryHost(tNode.parent)) {
-        // if node has a content query and parent also has a content query
-        // both queries need to check this node for shallow matches
-        add(this.parent !.shallow, tNode);
-      }
-      return this.parent;
-    }
-
-    isRootNodeOfQuery(tNode) && add(this.shallow, tNode);
-    return this;
+    add(this.shallow, tNode);
   }
 
   removeView(): void {
     removeView(this.shallow);
     removeView(this.deep);
   }
-}
-
-function isRootNodeOfQuery(tNode: TNode) {
-  return tNode.parent === null || isContentQueryHost(tNode.parent);
 }
 
 function copyQueriesToContainer(query: LQuery<any>| null): LQuery<any>|null {
@@ -191,19 +172,21 @@ function copyQueriesToView(query: LQuery<any>| null): LQuery<any>|null {
 
 function insertView(index: number, query: LQuery<any>| null) {
   while (query) {
-    ngDevMode &&
-        assertDefined(
-            query.containerValues, 'View queries need to have a pointer to container values.');
+    ngDevMode && assertViewQueryhasPointerToDeclarationContainer(query);
     query.containerValues !.splice(index, 0, query.values);
+
+    // mark a query as dirty only when inserted view had matching modes
+    if (query.values.length) {
+      query.list.setDirty();
+    }
+
     query = query.next;
   }
 }
 
 function removeView(query: LQuery<any>| null) {
   while (query) {
-    ngDevMode &&
-        assertDefined(
-            query.containerValues, 'View queries need to have a pointer to container values.');
+    ngDevMode && assertViewQueryhasPointerToDeclarationContainer(query);
 
     const containerValues = query.containerValues !;
     const viewValuesIdx = containerValues.indexOf(query.values);
@@ -219,6 +202,9 @@ function removeView(query: LQuery<any>| null) {
   }
 }
 
+function assertViewQueryhasPointerToDeclarationContainer(query: LQuery<any>) {
+  assertDefined(query.containerValues, 'View queries need to have a pointer to container values.');
+}
 
 /**
  * Iterates over local names for a given node and returns directive index
@@ -352,45 +338,160 @@ function createQuery<T>(
   };
 }
 
-type QueryList_<T> = QueryList<T>& {_valuesTree: any[]};
+type QueryList_<T> = QueryList<T>& {_valuesTree: any[], _static: boolean};
 
 /**
  * Creates and returns a QueryList.
  *
- * @param memoryIndex The index in memory where the QueryList should be saved. If null,
- * this is is a content query and the QueryList will be saved later through directiveCreate.
  * @param predicate The type for which the query will search
  * @param descend Whether or not to descend into children
  * @param read What to save in the query
  * @returns QueryList<T>
  */
 export function query<T>(
-    memoryIndex: number | null, predicate: Type<any>| string[], descend?: boolean,
     // TODO: "read" should be an AbstractType (FW-486)
-    read?: any): QueryList<T> {
+    predicate: Type<any>| string[], descend: boolean, read: any): QueryList<T> {
   ngDevMode && assertPreviousIsParent(getIsParent());
-  const queryList = new QueryList<T>();
-  const queries = getOrCreateCurrentQueries(LQueries_);
-  (queryList as QueryList_<T>)._valuesTree = [];
+  const lView = getLView();
+  const queryList = new QueryList<T>() as QueryList_<T>;
+  const queries = lView[QUERIES] || (lView[QUERIES] = new LQueries_(null, null, null));
+  queryList._valuesTree = [];
+  queryList._static = false;
   queries.track(queryList, predicate, descend, read);
-  storeCleanupWithContext(getLView(), queryList, queryList.destroy);
-  if (memoryIndex != null) {
-    store(memoryIndex, queryList);
-  }
+  storeCleanupWithContext(lView, queryList, queryList.destroy);
   return queryList;
 }
 
 /**
  * Refreshes a query by combining matches from all active views and removing matches from deleted
  * views.
- * Returns true if a query got dirty during change detection, false otherwise.
+ *
+ * @returns `true` if a query got dirty during change detection or if this is a static query
+ * resolving in creation mode, `false` otherwise.
  */
 export function queryRefresh(queryList: QueryList<any>): boolean {
   const queryListImpl = (queryList as any as QueryList_<any>);
-  if (queryList.dirty) {
+  const creationMode = isCreationMode();
+
+  // if creation mode and static or update mode and not static
+  if (queryList.dirty && creationMode === queryListImpl._static) {
     queryList.reset(queryListImpl._valuesTree || []);
     queryList.notifyOnChanges();
     return true;
   }
   return false;
+}
+
+/**
+ * Creates new QueryList for a static view query.
+ *
+ * @param predicate The type for which the query will search
+ * @param descend Whether or not to descend into children
+ * @param read What to save in the query
+ */
+export function staticViewQuery<T>(
+    // TODO(FW-486): "read" should be an AbstractType
+    predicate: Type<any>| string[], descend: boolean, read: any): void {
+  const queryList = viewQuery(predicate, descend, read) as QueryList_<T>;
+  const tView = getLView()[TVIEW];
+  queryList._static = true;
+  if (!tView.staticViewQueries) {
+    tView.staticViewQueries = true;
+  }
+}
+
+/**
+ * Creates new QueryList, stores the reference in LView and returns QueryList.
+ *
+ * @param predicate The type for which the query will search
+ * @param descend Whether or not to descend into children
+ * @param read What to save in the query
+ * @returns QueryList<T>
+ */
+export function viewQuery<T>(
+    // TODO(FW-486): "read" should be an AbstractType
+    predicate: Type<any>| string[], descend: boolean, read: any): QueryList<T> {
+  const lView = getLView();
+  const tView = lView[TVIEW];
+  if (tView.firstTemplatePass) {
+    tView.expandoStartIndex++;
+  }
+  const index = getCurrentQueryIndex();
+  const viewQuery: QueryList<T> = query<T>(predicate, descend, read);
+  store(index - HEADER_OFFSET, viewQuery);
+  setCurrentQueryIndex(index + 1);
+  return viewQuery;
+}
+
+/**
+* Loads current View Query and moves the pointer/index to the next View Query in LView.
+*/
+export function loadViewQuery<T>(): T {
+  const index = getCurrentQueryIndex();
+  setCurrentQueryIndex(index + 1);
+  return load<T>(index - HEADER_OFFSET);
+}
+
+/**
+ * Registers a QueryList, associated with a content query, for later refresh (part of a view
+ * refresh).
+ *
+ * @param directiveIndex Current directive index
+ * @param predicate The type for which the query will search
+ * @param descend Whether or not to descend into children
+ * @param read What to save in the query
+ * @returns QueryList<T>
+ */
+export function contentQuery<T>(
+    directiveIndex: number, predicate: Type<any>| string[], descend: boolean,
+    // TODO(FW-486): "read" should be an AbstractType
+    read: any): QueryList<T> {
+  const lView = getLView();
+  const tView = lView[TVIEW];
+  const contentQuery: QueryList<T> = query<T>(predicate, descend, read);
+  (lView[CONTENT_QUERIES] || (lView[CONTENT_QUERIES] = [])).push(contentQuery);
+  if (tView.firstTemplatePass) {
+    const tViewContentQueries = tView.contentQueries || (tView.contentQueries = []);
+    const lastSavedDirectiveIndex =
+        tView.contentQueries.length ? tView.contentQueries[tView.contentQueries.length - 1] : -1;
+    if (directiveIndex !== lastSavedDirectiveIndex) {
+      tViewContentQueries.push(directiveIndex);
+    }
+  }
+  return contentQuery;
+}
+
+/**
+ * Registers a QueryList, associated with a static content query, for later refresh
+ * (part of a view refresh).
+ *
+ * @param directiveIndex Current directive index
+ * @param predicate The type for which the query will search
+ * @param descend Whether or not to descend into children
+ * @param read What to save in the query
+ * @returns QueryList<T>
+ */
+export function staticContentQuery<T>(
+    directiveIndex: number, predicate: Type<any>| string[], descend: boolean,
+    // TODO(FW-486): "read" should be an AbstractType
+    read: any): void {
+  const queryList = contentQuery(directiveIndex, predicate, descend, read) as QueryList_<T>;
+  const tView = getLView()[TVIEW];
+  queryList._static = true;
+  if (!tView.staticContentQueries) {
+    tView.staticContentQueries = true;
+  }
+}
+
+export function loadContentQuery<T>(): QueryList<T> {
+  const lView = getLView();
+  ngDevMode &&
+      assertDefined(
+          lView[CONTENT_QUERIES], 'Content QueryList array should be defined if reading a query.');
+
+  const index = getCurrentQueryIndex();
+  ngDevMode && assertDataInRange(lView[CONTENT_QUERIES] !, index);
+
+  setCurrentQueryIndex(index + 1);
+  return lView[CONTENT_QUERIES] ![index];
 }

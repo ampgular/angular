@@ -25,9 +25,11 @@ export {
   injectAttribute as ɵinjectAttribute,
   getFactoryOf as ɵgetFactoryOf,
   getInheritedFactory as ɵgetInheritedFactory,
+  setComponentScope as ɵsetComponentScope,
   templateRefExtractor as ɵtemplateRefExtractor,
   ProvidersFeature as ɵProvidersFeature,
   InheritDefinitionFeature as ɵInheritDefinitionFeature,
+  NgOnChangesFeature as ɵNgOnChangesFeature,
   LifecycleHooksFeature as ɵLifecycleHooksFeature,
   NgModuleType as ɵNgModuleType,
   NgModuleRef as ɵRender3NgModuleRef,
@@ -45,8 +47,6 @@ export {
   listener as ɵlistener,
   text as ɵtext,
   embeddedViewStart as ɵembeddedViewStart,
-  query as ɵquery,
-  registerContentQuery as ɵregisterContentQuery,
   projection as ɵprojection,
   bind as ɵbind,
   interpolation1 as ɵinterpolation1,
@@ -74,12 +74,18 @@ export {
   pureFunction8 as ɵpureFunction8,
   pureFunctionV as ɵpureFunctionV,
   getCurrentView as ɵgetCurrentView,
+  getDirectives as ɵgetDirectives,
   getHostElement as ɵgetHostElement,
   restoreView as ɵrestoreView,
   containerRefreshStart as ɵcontainerRefreshStart,
   containerRefreshEnd as ɵcontainerRefreshEnd,
   queryRefresh as ɵqueryRefresh,
-  loadQueryList as ɵloadQueryList,
+  viewQuery as ɵviewQuery,
+  staticViewQuery as ɵstaticViewQuery,
+  staticContentQuery as ɵstaticContentQuery,
+  loadViewQuery as ɵloadViewQuery,
+  contentQuery as ɵcontentQuery,
+  loadContentQuery as ɵloadContentQuery,
   elementEnd as ɵelementEnd,
   elementProperty as ɵelementProperty,
   componentHostSyntheticProperty as ɵcomponentHostSyntheticProperty,
@@ -93,11 +99,19 @@ export {
   elementContainerStart as ɵelementContainerStart,
   elementContainerEnd as ɵelementContainerEnd,
   elementStyling as ɵelementStyling,
-  elementHostAttrs as ɵelementHostAttrs,
   elementStylingMap as ɵelementStylingMap,
   elementStyleProp as ɵelementStyleProp,
   elementStylingApply as ɵelementStylingApply,
   elementClassProp as ɵelementClassProp,
+
+  elementHostAttrs as ɵelementHostAttrs,
+  elementHostStyling as ɵelementHostStyling,
+  elementHostStylingMap as ɵelementHostStylingMap,
+  elementHostStyleProp as ɵelementHostStyleProp,
+  elementHostClassProp as ɵelementHostClassProp,
+  elementHostStylingApply as ɵelementHostStylingApply,
+
+  select as ɵselect,
   textBinding as ɵtextBinding,
   template as ɵtemplate,
   embeddedViewEnd as ɵembeddedViewEnd,
@@ -151,6 +165,8 @@ export {
 export {
   sanitizeHtml as ɵsanitizeHtml,
   sanitizeStyle as ɵsanitizeStyle,
+  defaultStyleSanitizer as ɵdefaultStyleSanitizer,
+  sanitizeScript as ɵsanitizeScript,
   sanitizeUrl as ɵsanitizeUrl,
   sanitizeResourceUrl as ɵsanitizeResourceUrl,
   sanitizeUrlOrResourceUrl as ɵsanitizeUrlOrResourceUrl,
@@ -207,7 +223,8 @@ export {
 //
 // no code actually imports these symbols from the @angular/core entry point
 export {
-  compileNgModuleFactory__POST_R3__ as ɵcompileNgModuleFactory__POST_R3__
+  compileNgModuleFactory__POST_R3__ as ɵcompileNgModuleFactory__POST_R3__,
+  isBoundToModule__POST_R3__ as ɵisBoundToModule__POST_R3__
 } from './application_ref';
 export {
   SWITCH_COMPILE_COMPONENT__POST_R3__ as ɵSWITCH_COMPILE_COMPONENT__POST_R3__,
@@ -253,6 +270,8 @@ export {getModuleFactory__POST_R3__ as ɵgetModuleFactory__POST_R3__} from './li
 export {
   publishGlobalUtil as ɵpublishGlobalUtil,
   publishDefaultGlobalUtils as ɵpublishDefaultGlobalUtils
-} from './render3/global_utils';
+} from './render3/util/global_utils';
+
+export {createInjector as ɵcreateInjector} from './di/r3_injector';
 
 // clang-format on

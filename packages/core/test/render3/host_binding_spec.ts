@@ -6,11 +6,11 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {ElementRef, QueryList} from '@angular/core';
+import {ElementRef, QueryList, ViewContainerRef} from '@angular/core';
 
-import {AttributeMarker, defineComponent, template, defineDirective, InheritDefinitionFeature, ProvidersFeature} from '../../src/render3/index';
-import {allocHostVars, bind, directiveInject, element, elementAttribute, elementEnd, elementProperty, elementStyleProp, elementStyling, elementStylingApply, elementStart, listener, load, text, textBinding, loadQueryList, registerContentQuery, elementHostAttrs} from '../../src/render3/instructions';
-import {query, queryRefresh} from '../../src/render3/query';
+import {AttributeMarker, defineComponent, template, defineDirective, InheritDefinitionFeature, ProvidersFeature, NgOnChangesFeature} from '../../src/render3/index';
+import {allocHostVars, bind, directiveInject, element, elementAttribute, elementEnd, elementProperty, elementStyleProp, elementStyling, elementStylingApply, elementStart, listener, load, text, textBinding, elementHostAttrs, elementHostStylingApply, elementHostStyleProp, elementHostStyling} from '../../src/render3/instructions/all';
+import {loadContentQuery, contentQuery, queryRefresh} from '../../src/render3/query';
 import {RenderFlags} from '../../src/render3/interfaces/definition';
 import {pureFunction1, pureFunction2} from '../../src/render3/pure_function';
 import {sanitizeUrl, sanitizeUrlOrResourceUrl, sanitizeHtml} from '../../src/sanitization/sanitization';
@@ -107,7 +107,7 @@ describe('host bindings', () => {
       });
     }
 
-    function Template() { element(0, 'span', [AttributeMarker.SelectOnly, 'dir']); }
+    function Template() { element(0, 'span', [AttributeMarker.Bindings, 'dir']); }
 
     const fixture = new TemplateFixture(Template, () => {}, 1, 0, [Directive]);
     expect(fixture.html).toEqual('<span class="foo"></span>');
@@ -357,6 +357,7 @@ describe('host bindings', () => {
         template: (rf: RenderFlags, ctx: InitHookComp) => {},
         consts: 0,
         vars: 0,
+        features: [NgOnChangesFeature()],
         hostBindings: (rf: RenderFlags, ctx: InitHookComp, elIndex: number) => {
           if (rf & RenderFlags.Create) {
             allocHostVars(1);
@@ -505,7 +506,7 @@ describe('host bindings', () => {
      */
     const App = createComponent('parent', (rf: RenderFlags, ctx: any) => {
       if (rf & RenderFlags.Create) {
-        template(0, NgForTemplate, 2, 0, 'div', ['ngForOf', '']);
+        template(0, NgForTemplate, 2, 0, 'div', [AttributeMarker.Template, 'ngFor', 'ngForOf']);
       }
       if (rf & RenderFlags.Update) {
         elementProperty(0, 'ngForOf', bind(ctx.rows));
@@ -967,7 +968,7 @@ describe('host bindings', () => {
         factory: () => new HostAttributeDir(),
         hostBindings: function(rf, ctx, elIndex) {
           if (rf & RenderFlags.Create) {
-            elementHostAttrs(ctx, ['role', 'listbox']);
+            elementHostAttrs(['role', 'listbox']);
           }
         }
       });
@@ -1008,11 +1009,14 @@ describe('host bindings', () => {
             elementProperty(elIndex, 'id', bind(ctx.foos.length), null, true);
           }
         },
-        contentQueries: (dirIndex) => { registerContentQuery(query(null, ['foo']), dirIndex); },
-        contentQueriesRefresh: (dirIndex: number, queryStartIdx: number) => {
-          let tmp: any;
-          const instance = load<HostBindingWithContentChildren>(dirIndex);
-          queryRefresh(tmp = loadQueryList<ElementRef>(queryStartIdx)) && (instance.foos = tmp);
+        contentQueries: (rf: RenderFlags, ctx: any, dirIndex: number) => {
+          if (rf & RenderFlags.Create) {
+            contentQuery(dirIndex, ['foo'], false, null);
+          }
+          if (rf & RenderFlags.Update) {
+            let tmp: any;
+            queryRefresh(tmp = loadContentQuery<ElementRef>()) && (ctx.foos = tmp);
+          }
         },
         template: (rf: RenderFlags, cmp: HostBindingWithContentChildren) => {}
       });
@@ -1103,11 +1107,11 @@ describe('host bindings', () => {
           vars: 0,
           hostBindings: (rf: RenderFlags, ctx: HostBindingToStyles, elIndex: number) => {
             if (rf & RenderFlags.Create) {
-              elementStyling(null, ['width'], null, ctx);
+              elementHostStyling(null, ['width']);
             }
             if (rf & RenderFlags.Update) {
-              elementStyleProp(0, 0, ctx.width, 'px', ctx);
-              elementStylingApply(0, ctx);
+              elementHostStyleProp(0, ctx.width, 'px');
+              elementHostStylingApply();
             }
           },
           template: (rf: RenderFlags, cmp: HostBindingToStyles) => {}
@@ -1131,6 +1135,58 @@ describe('host bindings', () => {
       expect(hostBindingEl.style.width).toEqual('5px');
     });
 
+    it('should bind to host styles on containers', () => {
+      let hostBindingDir !: HostBindingToStyles;
+      /**
+       * host: {
+       *   '[style.width.px]': 'width'
+       * }
+       */
+      class HostBindingToStyles {
+        width = 2;
+
+        static ngDirectiveDef = defineDirective({
+          type: HostBindingToStyles,
+          selectors: [['', 'hostStyles', '']],
+          factory: () => hostBindingDir = new HostBindingToStyles(),
+          hostBindings: (rf: RenderFlags, ctx: HostBindingToStyles, elIndex: number) => {
+            if (rf & RenderFlags.Create) {
+              elementHostStyling(null, ['width']);
+            }
+            if (rf & RenderFlags.Update) {
+              elementHostStyleProp(0, ctx.width, 'px');
+              elementHostStylingApply();
+            }
+          }
+        });
+      }
+
+      class ContainerDir {
+        constructor(public vcr: ViewContainerRef) {}
+
+        static ngDirectiveDef = defineDirective({
+          type: ContainerDir,
+          selectors: [['', 'containerDir', '']],
+          factory: () => new ContainerDir(directiveInject(ViewContainerRef as any)),
+        });
+      }
+
+      /** <div hostStyles containerDir></div> */
+      const App = createComponent('app', (rf: RenderFlags, ctx: any) => {
+        if (rf & RenderFlags.Create) {
+          element(0, 'div', ['containerDir', '', 'hostStyles', '']);
+        }
+      }, 1, 0, [ContainerDir, HostBindingToStyles]);
+
+      const fixture = new ComponentFixture(App);
+      const hostBindingEl = fixture.hostElement.querySelector('div') as HTMLElement;
+      expect(hostBindingEl.style.width).toEqual('2px');
+
+      hostBindingDir.width = 5;
+      fixture.update();
+      expect(hostBindingEl.style.width).toEqual('5px');
+    });
+
     it('should apply static host classes', () => {
       /**
        * host: {
@@ -1146,11 +1202,11 @@ describe('host bindings', () => {
           vars: 0,
           hostBindings: (rf: RenderFlags, ctx: StaticHostClass, elIndex: number) => {
             if (rf & RenderFlags.Create) {
-              elementHostAttrs(ctx, [AttributeMarker.Classes, 'mat-toolbar']);
-              elementStyling(['mat-toolbar'], null, null, ctx);
+              elementHostAttrs([AttributeMarker.Classes, 'mat-toolbar']);
+              elementHostStyling(['mat-toolbar']);
             }
             if (rf & RenderFlags.Update) {
-              elementStylingApply(0, ctx);
+              elementHostStylingApply();
             }
           },
           template: (rf: RenderFlags, cmp: StaticHostClass) => {}

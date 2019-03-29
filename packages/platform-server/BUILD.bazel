@@ -1,6 +1,6 @@
-package(default_visibility = ["//visibility:public"])
-
 load("//tools:defaults.bzl", "ng_module", "ng_package")
+
+package(default_visibility = ["//visibility:public"])
 
 ng_module(
     name = "platform-server",
@@ -16,13 +16,12 @@ ng_module(
         "//packages/common/http",
         "//packages/compiler",
         "//packages/core",
-        "//packages/http",
         "//packages/platform-browser",
         "//packages/platform-browser-dynamic",
         "//packages/platform-browser/animations",
-        "@ngdeps//@types/node",
-        "@ngdeps//zone.js",
-        "@rxjs",
+        "@npm//@types/node",
+        "@npm//rxjs",
+        "@npm//zone.js",
     ],
 )
 
@@ -38,7 +37,9 @@ ng_package(
     ],
     # Do not add more to this list.
     # Dependencies on the full npm_package cause long re-builds.
-    visibility = ["//visibility:private"],
+    visibility = [
+        "//packages/compiler-cli/integrationtest:__pkg__",
+    ],
     deps = [
         ":platform-server",
         "//packages/platform-server/testing",

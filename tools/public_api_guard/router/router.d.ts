@@ -147,7 +147,7 @@ export declare class GuardsCheckStart extends RouterEvent {
 
 export declare type LoadChildren = string | LoadChildrenCallback;
 
-export declare type LoadChildrenCallback = () => Type<any> | NgModuleFactory<any> | Promise<Type<any>> | Observable<Type<any>>;
+export declare type LoadChildrenCallback = () => Type<any> | NgModuleFactory<any> | Promise<NgModuleFactory<any>> | Promise<Type<any>> | Observable<Type<any>>;
 
 export declare type Navigation = {
     id: number;
@@ -390,7 +390,7 @@ export declare class RouterLinkActive implements OnChanges, OnDestroy, AfterCont
     routerLinkActiveOptions: {
         exact: boolean;
     };
-    constructor(router: Router, element: ElementRef, renderer: Renderer2, cdr: ChangeDetectorRef);
+    constructor(router: Router, element: ElementRef, renderer: Renderer2, link?: RouterLink | undefined, linkWithHref?: RouterLinkWithHref | undefined);
     ngAfterContentInit(): void;
     ngOnChanges(changes: SimpleChanges): void;
     ngOnDestroy(): void;

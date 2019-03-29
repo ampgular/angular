@@ -24,24 +24,30 @@ const angularFiles = setup({
 
 const htmlParser = new HtmlParser();
 
+// TODO: update translation extraction RegExp to support i18nLocalize calls once #28689 lands.
+const EXTRACT_GENERATED_TRANSLATIONS_REGEXP =
+    /const\s*(.*?)\s*=\s*goog\.getMsg\("(.*?)",?\s*(.*?)\)/g;
+
 const diff = (a: Set<string>, b: Set<string>): Set<string> =>
     new Set([...Array.from(a)].filter(x => !b.has(x)));
 
-const extract = (from: string, regex: any, transformFn: (match: any[]) => any) => {
-  const result = new Set<string>();
-  let item;
-  while ((item = regex.exec(from)) !== null) {
-    result.add(transformFn(item));
-  }
-  return result;
-};
+const extract =
+    (from: string, regex: any, transformFn: (match: any[], state?: Set<any>) => any) => {
+      const result = new Set<any>();
+      let item;
+      while ((item = regex.exec(from)) !== null) {
+        result.add(transformFn(item, result));
+      }
+      return result;
+    };
 
 // verify that we extracted all the necessary translations
 // and their ids match the ones extracted via 'ng xi18n'
 const verifyTranslationIds =
     (source: string, output: string, exceptions = {},
      interpolationConfig: InterpolationConfig = DEFAULT_INTERPOLATION_CONFIG) => {
-      const parseResult = htmlParser.parse(source, 'path:://to/template', true);
+      const parseResult =
+          htmlParser.parse(source, 'path:://to/template', {tokenizeExpansionForms: true});
       const extractedIdToMsg = new Map<string, any>();
       const extractedIds = new Set<string>();
       const generatedIds = new Set<string>();
@@ -72,8 +78,7 @@ const verifyTranslationIds =
 // placeholders object defined as goog.getMsg function argument
 const verifyPlaceholdersIntegrity = (output: string) => {
   const extactTranslations = (from: string) => {
-    const regex = /const\s*(.*?)\s*=\s*goog\.getMsg\("(.*?)",?\s*(.*?)\)/g;
-    return extract(from, regex, v => [v[2], v[3]]);
+    return extract(from, EXTRACT_GENERATED_TRANSLATIONS_REGEXP, v => [v[2], v[3]]);
   };
   const extractPlaceholdersFromBody = (body: string) => {
     const regex = /{\$(.*?)}/g;
@@ -91,6 +96,19 @@ const verifyPlaceholdersIntegrity = (output: string) => {
       return false;
     }
   });
+  return true;
+};
+
+const verifyUniqueConsts = (output: string) => {
+  extract(
+      output, EXTRACT_GENERATED_TRANSLATIONS_REGEXP,
+      (current: string[], state: Set<any>): string => {
+        const key = current[1];
+        if (state.has(key)) {
+          throw new Error(`Duplicate const ${key} found in generated output!`);
+        }
+        return key;
+      });
   return true;
 };
 
@@ -129,23 +147,27 @@ const verify = (input: string, output: string, extra: any = {}): void => {
       ({i18nUseExternalIds, ...(extra.compilerOptions || {})});
 
   // invoke with file-based prefix translation names
-  let result = compile(files, angularFiles, opts(false));
-  maybePrint(result.source, extra.verbose);
-  expect(verifyPlaceholdersIntegrity(result.source)).toBe(true);
-  expectEmit(result.source, output, 'Incorrect template');
-
-  if (extra.skipIdBasedCheck) return;
+  if (!extra.skipPathBasedCheck) {
+    const result = compile(files, angularFiles, opts(false));
+    maybePrint(result.source, extra.verbose);
+    expect(verifyPlaceholdersIntegrity(result.source)).toBe(true);
+    expect(verifyUniqueConsts(result.source)).toBe(true);
+    expectEmit(result.source, output, 'Incorrect template');
+  }
 
   // invoke with translation names based on external ids
-  result = compile(files, angularFiles, opts(true));
-  maybePrint(result.source, extra.verbose);
-  const interpolationConfig = extra.inputArgs && extra.inputArgs.interpolation ?
-      InterpolationConfig.fromArray(extra.inputArgs.interpolation) :
-      undefined;
-  expect(verifyTranslationIds(input, result.source, extra.exceptions, interpolationConfig))
-      .toBe(true);
-  expect(verifyPlaceholdersIntegrity(result.source)).toBe(true);
-  expectEmit(result.source, output, 'Incorrect template');
+  if (!extra.skipIdBasedCheck) {
+    const result = compile(files, angularFiles, opts(true));
+    maybePrint(result.source, extra.verbose);
+    const interpolationConfig = extra.inputArgs && extra.inputArgs.interpolation ?
+        InterpolationConfig.fromArray(extra.inputArgs.interpolation) :
+        undefined;
+    expect(verifyTranslationIds(input, result.source, extra.exceptions, interpolationConfig))
+        .toBe(true);
+    expect(verifyPlaceholdersIntegrity(result.source)).toBe(true);
+    expect(verifyUniqueConsts(result.source)).toBe(true);
+    expectEmit(result.source, output, 'Incorrect template');
+  }
 };
 
 describe('i18n support in the view compiler', () => {
@@ -344,9 +366,11 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 0, ctx.valueA)));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueB));
             $r3$.ɵi18nApply(2);
+            $r3$.ɵselect(3);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueA));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueB));
             $r3$.ɵi18nExp($r3$.ɵbind((ctx.valueA + ctx.valueB)));
@@ -378,6 +402,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 0, ctx.valueA)));
             $r3$.ɵi18nApply(2);
           }
@@ -394,7 +419,7 @@ describe('i18n support in the view compiler', () => {
       `;
 
       const output = String.raw `
-        const $_c0$ = ["ngFor", "", ${AttributeMarker.SelectOnly}, "ngForOf"];
+        const $_c0$ = [${AttributeMarker.Template}, "ngFor", "ngForOf"];
         /**
          * @desc d
          * @meaning m
@@ -414,6 +439,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $outer_r1$ = ctx.$implicit;
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(2, 0, $outer_r1$)));
             $r3$.ɵi18nApply(3);
           }
@@ -426,6 +452,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵtemplate(0, MyComponent_div_0_Template, 4, 3, "div", $_c0$);
           }
           if (rf & 2) {
+            $r3$.ɵselect(0);
             $r3$.ɵelementProperty(0, "ngForOf", $r3$.ɵbind(ctx.items));
           }
         }
@@ -500,9 +527,11 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 0, ctx.valueA)));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueB));
             $r3$.ɵi18nApply(2);
+            $r3$.ɵselect(3);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueA));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueB));
             $r3$.ɵi18nExp($r3$.ɵbind((ctx.valueA + ctx.valueB)));
@@ -523,7 +552,7 @@ describe('i18n support in the view compiler', () => {
       `;
 
       const output = String.raw `
-        const $_c0$ = ["ngFor", "", ${AttributeMarker.SelectOnly}, "ngForOf"];
+        const $_c0$ = [${AttributeMarker.Template}, "ngFor", "ngForOf"];
         /**
          * @desc d
          * @meaning m
@@ -543,6 +572,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $outer_r1$ = ctx.$implicit;
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(2, 0, $outer_r1$)));
             $r3$.ɵi18nApply(3);
           }
@@ -555,6 +585,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵtemplate(0, MyComponent_div_0_Template, 4, 3, "div", $_c0$);
           }
           if (rf & 2) {
+            $r3$.ɵselect(0);
             $r3$.ɵelementProperty(0, "ngForOf", $r3$.ɵbind(ctx.items));
           }
         }
@@ -588,6 +619,27 @@ describe('i18n support in the view compiler', () => {
       `;
 
       verify(input, output);
+    });
+
+    it('should sanitize ids and generate proper const names', () => {
+      const input = `
+        <div i18n="@@ID.WITH.INVALID.CHARS.2" i18n-title="@@ID.WITH.INVALID.CHARS" title="Element title">
+          Some content
+        </div>
+      `;
+
+      const output = String.raw `
+        const MSG_EXTERNAL_ID_WITH_INVALID_CHARS$$APP_SPEC_TS_0 = goog.getMsg("Element title");
+        const $_c1$ = ["title", MSG_EXTERNAL_ID_WITH_INVALID_CHARS$$APP_SPEC_TS_0];
+        const MSG_EXTERNAL_ID_WITH_INVALID_CHARS_2$$APP_SPEC_TS_2 = goog.getMsg(" Some content ");
+        …
+      `;
+
+      const exceptions = {
+        'ID.WITH.INVALID.CHARS': 'Verify const name generation only',
+        'ID.WITH.INVALID.CHARS.2': 'Verify const name generation only'
+      };
+      verify(input, output, {exceptions, skipPathBasedCheck: true});
     });
   });
 
@@ -687,6 +739,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueA));
             $r3$.ɵi18nApply(1);
           }
@@ -713,12 +766,45 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueA));
             $r3$.ɵi18nApply(1);
           }
         }
       `;
       verify(input, output, {inputArgs: {interpolation: ['{%', '%}']}});
+    });
+
+    it('should support interpolations with complex expressions', () => {
+      const input = `
+        <div i18n>
+          {{ valueA | async }}
+          {{ valueA?.a?.b }}
+        </div>
+      `;
+
+      const output = String.raw `
+        const $MSG_EXTERNAL_1482713963707913023$$APP_SPEC_TS_0$ = goog.getMsg(" {$interpolation} {$interpolation_1} ", {
+          "interpolation": "\uFFFD0\uFFFD",
+          "interpolation_1": "\uFFFD1\uFFFD"
+        });
+        …
+        template: function MyComponent_Template(rf, ctx) {
+          if (rf & 1) {
+            $r3$.ɵelementStart(0, "div");
+            $r3$.ɵi18n(1, $MSG_EXTERNAL_1482713963707913023$$APP_SPEC_TS_0$);
+            $r3$.ɵpipe(2, "async");
+            $r3$.ɵelementEnd();
+          }
+          if (rf & 2) {
+            $r3$.ɵselect(1);
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(2, 2, ctx.valueA)));
+            $r3$.ɵi18nExp($r3$.ɵbind(((ctx.valueA == null) ? null : ((ctx.valueA.a == null) ? null : ctx.valueA.a.b))));
+            $r3$.ɵi18nApply(1);
+          }
+        }
+      `;
+      verify(input, output);
     });
 
     it('should handle i18n attributes with bindings in content', () => {
@@ -755,10 +841,13 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.one));
             $r3$.ɵi18nApply(1);
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(4, 0, ctx.two)));
+            $r3$.ɵselect(3);
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(4, 3, ctx.two)));
             $r3$.ɵi18nApply(3);
+            $r3$.ɵselect(6);
             $r3$.ɵi18nExp($r3$.ɵbind(((ctx.three + ctx.four) + ctx.five)));
             $r3$.ɵi18nApply(6);
           }
@@ -823,9 +912,11 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.one));
             $r3$.ɵi18nApply(1);
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(5, 0, ctx.two)));
+            $r3$.ɵselect(4);
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(5, 3, ctx.two)));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.nestedInBlockTwo));
             $r3$.ɵi18nApply(4);
           }
@@ -891,14 +982,16 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(2);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueB));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueC));
             $r3$.ɵi18nApply(3);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueA));
             $r3$.ɵi18nApply(1);
+            $r3$.ɵselect(7);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.valueE));
             $r3$.ɵi18nApply(8);
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(6, 0, ctx.valueD)));
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(6, 5, ctx.valueD)));
             $r3$.ɵi18nApply(5);
           }
         }
@@ -923,7 +1016,7 @@ describe('i18n support in the view compiler', () => {
       `;
 
       const output = String.raw `
-        const $_c0$ = [${AttributeMarker.SelectOnly}, "ngIf"];
+        const $_c0$ = [${AttributeMarker.Template}, "ngIf"];
         const $MSG_EXTERNAL_7679414751795588050$$APP_SPEC_TS__1$ = goog.getMsg(" Some other content {$interpolation} {$startTagDiv} More nested levels with bindings {$interpolation_1} {$closeTagDiv}", {
           "interpolation": "\uFFFD0\uFFFD",
           "startTagDiv": "\uFFFD#3\uFFFD",
@@ -944,8 +1037,9 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(2);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.valueA));
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(4, 0, $ctx_r0$.valueB)));
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(4, 2, $ctx_r0$.valueB)));
             $r3$.ɵi18nApply(2);
           }
         }
@@ -960,6 +1054,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(2);
             $r3$.ɵelementProperty(2, "ngIf", $r3$.ɵbind(ctx.visible));
           }
         }
@@ -977,7 +1072,8 @@ describe('i18n support in the view compiler', () => {
 
       const output = String.raw `
         const $_c0$ = ["src", "logo.png"];
-        const $_c1$ = [${AttributeMarker.SelectOnly}, "ngIf"];
+        const $_c1$ = ["src", "logo.png", ${AttributeMarker.Template}, "ngIf"];
+        const $_c2$ = ["src", "logo.png", ${AttributeMarker.Bindings}, "title", ${AttributeMarker.Template}, "ngIf"];
         function MyComponent_img_1_Template(rf, ctx) {
           if (rf & 1) {
             $r3$.ɵelement(0, "img", $_c0$);
@@ -986,15 +1082,16 @@ describe('i18n support in the view compiler', () => {
         const $MSG_EXTERNAL_2367729185105559721$ = goog.getMsg("App logo #{$interpolation}", {
           "interpolation": "\uFFFD0\uFFFD"
         });
-        const $_c2$ = ["title", $MSG_EXTERNAL_2367729185105559721$];
+        const $_c3$ = ["title", $MSG_EXTERNAL_2367729185105559721$];
         function MyComponent_img_2_Template(rf, ctx) {
           if (rf & 1) {
             $r3$.ɵelementStart(0, "img", $_c0$);
-            $r3$.ɵi18nAttributes(1, $_c2$);
+            $r3$.ɵi18nAttributes(1, $_c3$);
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
             const $ctx_r1$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r1$.id));
             $r3$.ɵi18nApply(1);
           }
@@ -1006,10 +1103,12 @@ describe('i18n support in the view compiler', () => {
           if (rf & 1) {
             $r3$.ɵelement(0, "img", $_c0$);
             $r3$.ɵtemplate(1, MyComponent_img_1_Template, 1, 0, "img", $_c1$);
-            $r3$.ɵtemplate(2, MyComponent_img_2_Template, 2, 1, "img", $_c1$);
+            $r3$.ɵtemplate(2, MyComponent_img_2_Template, 2, 1, "img", $_c2$);
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵelementProperty(1, "ngIf", $r3$.ɵbind(ctx.visible));
+            $r3$.ɵselect(2);
             $r3$.ɵelementProperty(2, "ngIf", $r3$.ɵbind(ctx.visible));
           }
         }
@@ -1044,7 +1143,7 @@ describe('i18n support in the view compiler', () => {
       `;
 
       const output = String.raw `
-        const $_c0$ = [${AttributeMarker.SelectOnly}, "ngIf"];
+        const $_c0$ = [${AttributeMarker.Template}, "ngIf"];
         function MyComponent_div_2_div_4_Template(rf, ctx) {
           if (rf & 1) {
             $r3$.ɵi18nStart(0, $I18N_EXTERNAL_1221890473527419724$$APP_SPEC_TS_0$, 2);
@@ -1055,6 +1154,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r2$ = $r3$.ɵnextContext(2);
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r2$.valueC));
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r2$.valueD));
             $r3$.ɵi18nApply(0);
@@ -1073,9 +1173,10 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(4);
             $r3$.ɵelementProperty(4, "ngIf", $r3$.ɵbind($ctx_r0$.exists));
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.valueA));
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(3, 0, $ctx_r0$.valueB)));
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(3, 3, $ctx_r0$.valueB)));
             $r3$.ɵi18nApply(0);
           }
         }
@@ -1104,8 +1205,9 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r1$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind(($ctx_r1$.valueE + $ctx_r1$.valueF)));
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(3, 0, $ctx_r1$.valueG)));
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(3, 2, $ctx_r1$.valueG)));
             $r3$.ɵi18nApply(0);
           }
         }
@@ -1122,7 +1224,9 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(2);
             $r3$.ɵelementProperty(2, "ngIf", $r3$.ɵbind(ctx.visible));
+            $r3$.ɵselect(3);
             $r3$.ɵelementProperty(3, "ngIf", $r3$.ɵbind(!ctx.visible));
           }
         }
@@ -1137,7 +1241,7 @@ describe('i18n support in the view compiler', () => {
       `;
 
       const output = String.raw `
-        const $_c0$ = [${AttributeMarker.SelectOnly}, "ngIf"];
+        const $_c0$ = [${AttributeMarker.Template}, "ngIf"];
         const $MSG_EXTERNAL_119975189388320493$$APP_SPEC_TS__1$ = goog.getMsg("Some other content {$startTagSpan}{$interpolation}{$closeTagSpan}", {
           "startTagSpan": "\uFFFD#2\uFFFD",
           "interpolation": "\uFFFD0\uFFFD",
@@ -1154,6 +1258,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
               const $ctx_r0$ = $r3$.ɵnextContext();
+              $r3$.ɵselect(1);
               $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.valueA));
               $r3$.ɵi18nApply(1);
           }
@@ -1166,7 +1271,30 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵtemplate(0, MyComponent_div_0_Template, 3, 1, "div", $_c0$);
           }
           if (rf & 2) {
+            $r3$.ɵselect(0);
             $r3$.ɵelementProperty(0, "ngIf", $r3$.ɵbind(ctx.visible));
+          }
+        }
+      `;
+
+      verify(input, output);
+    });
+
+    it('should generate event listeners instructions before i18n ones', () => {
+      const input = `
+        <div i18n (click)="onClick()">Hello</div>
+      `;
+
+      const output = String.raw `
+        const $_c0$ = [${AttributeMarker.Bindings}, "click"];
+        const $MSG_EXTERNAL_3902961887793684628$$APP_SPEC_TS_1$ = goog.getMsg("Hello");
+        …
+        template: function MyComponent_Template(rf, ctx) {
+          if (rf & 1) {
+            $r3$.ɵelementStart(0, "div", $_c0$);
+            $r3$.ɵlistener("click", function MyComponent_Template_div_click_0_listener($event) { return ctx.onClick(); });
+            $r3$.ɵi18n(1, $MSG_EXTERNAL_3902961887793684628$$APP_SPEC_TS_1$);
+            $r3$.ɵelementEnd();
           }
         }
       `;
@@ -1216,6 +1344,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.age));
             $r3$.ɵi18nApply(1);
           }
@@ -1304,7 +1433,8 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementContainerEnd();
           }
           if (rf & 2) {
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(2, 0, ctx.valueA)));
+            $r3$.ɵselect(1);
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(2, 1, ctx.valueA)));
             $r3$.ɵi18nApply(1);
           }
         }
@@ -1328,7 +1458,8 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵpipe(1, "uppercase");
           } if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 0, $ctx_r0$.valueA)));
+            $r3$.ɵselect(0);
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 1, $ctx_r0$.valueA)));
             $r3$.ɵi18nApply(0);
           }
         }
@@ -1369,7 +1500,8 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 0, $ctx_r0$.valueA)));
+            $r3$.ɵselect(0);
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 1, $ctx_r0$.valueA)));
             $r3$.ɵi18nApply(0);
           }
         }
@@ -1388,7 +1520,8 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(4, 0, ctx.valueB)));
+            $r3$.ɵselect(1);
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(4, 1, ctx.valueB)));
             $r3$.ɵi18nApply(1);
           }
         }
@@ -1418,6 +1551,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.gender));
             $r3$.ɵi18nApply(0);
           }
@@ -1433,6 +1567,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementContainerEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(2);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.age));
             $r3$.ɵi18nApply(2);
           }
@@ -1464,6 +1599,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r2$ = $r3$.ɵnextContext(3);
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r2$.valueC));
             $r3$.ɵi18nApply(0);
           }
@@ -1476,6 +1612,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r1$ = $r3$.ɵnextContext(2);
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r1$.valueB));
             $r3$.ɵi18nApply(0);
           }
@@ -1497,7 +1634,8 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
-            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 0, $ctx_r0$.valueA)));
+            $r3$.ɵselect(0);
+            $r3$.ɵi18nExp($r3$.ɵbind($r3$.ɵpipeBind1(1, 1, $ctx_r0$.valueA)));
             $r3$.ɵi18nApply(0);
           }
         }
@@ -1539,6 +1677,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.age));
             $r3$.ɵi18nApply(0);
           }
@@ -1554,6 +1693,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵtemplate(2, MyComponent_ng_template_2_Template, 1, 1, "ng-template");
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nApply(1);
           }
@@ -1599,6 +1739,45 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵtemplate(3, MyComponent_ng_template_3_Template, 2, 0, "ng-template");
           }
         }
+      `;
+
+      verify(input, output);
+    });
+
+    it('should not emit duplicate i18n consts for nested <ng-container>s', () => {
+      const input = `
+        <ng-template i18n>
+          Root content
+          <ng-container *ngIf="visible">
+            Nested content
+          </ng-container>
+        </ng-template>
+      `;
+
+      const output = String.raw `
+        const $MSG_EXTERNAL_8537814667662432133$$APP_SPEC_TS__0$ = goog.getMsg(" Root content {$startTagNgContainer} Nested content {$closeTagNgContainer}", {
+          "startTagNgContainer": "\uFFFD*1:1\uFFFD\uFFFD#1:1\uFFFD",
+          "closeTagNgContainer": "\uFFFD/#1:1\uFFFD\uFFFD/*1:1\uFFFD"
+        });
+        …
+      `;
+
+      verify(input, output);
+    });
+
+    it('should not emit duplicate i18n consts for elements with the same content', () => {
+      const input = `
+        <div i18n>Test</div>
+        <div i18n>Test</div>
+      `;
+
+      // TODO(FW-635): currently we generate unique consts for each i18n block even though it might
+      // contain the same content. This should be optimized by translation statements caching, that
+      // can be implemented in the future within FW-635.
+      const output = String.raw `
+        const $MSG_EXTERNAL_6563391987554512024$$APP_SPEC_TS_0$ = goog.getMsg("Test");
+        const $MSG_EXTERNAL_6563391987554512024$$APP_SPEC_TS_1$ = goog.getMsg("Test");
+        …
       `;
 
       verify(input, output);
@@ -1658,6 +1837,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nApply(1);
           }
@@ -1682,6 +1862,32 @@ describe('i18n support in the view compiler', () => {
       verify(input, output);
     });
 
+    it('should support ICU-only templates', () => {
+      const input = `
+        {age, select, 10 {ten} 20 {twenty} other {other}}
+      `;
+
+      const output = String.raw `
+        const $MSG_EXTERNAL_8806993169187953163$$APP_SPEC_TS_0$ = goog.getMsg("{VAR_SELECT, select, 10 {ten} 20 {twenty} other {other}}");
+        const $I18N_EXTERNAL_8806993169187953163$$APP_SPEC_TS_0$ = $r3$.ɵi18nPostprocess($MSG_EXTERNAL_8806993169187953163$$APP_SPEC_TS_0$, { "VAR_SELECT": "\uFFFD0\uFFFD" });
+        …
+        consts: 1,
+        vars: 1,
+        template: function MyComponent_Template(rf, ctx) {
+          if (rf & 1) {
+            $r3$.ɵi18n(0, $I18N_EXTERNAL_8806993169187953163$$APP_SPEC_TS_0$);
+          }
+          if (rf & 2) {
+            $r3$.ɵselect(0);
+            $r3$.ɵi18nExp($r3$.ɵbind(ctx.age));
+            $r3$.ɵi18nApply(0);
+          }
+        }
+      `;
+
+      verify(input, output);
+    });
+
     it('should generate i18n instructions for icus generated outside of i18n blocks', () => {
       const input = `
         <div>{gender, select, male {male} female {female} other {other}}</div>
@@ -1698,25 +1904,27 @@ describe('i18n support in the view compiler', () => {
         const $I18N_EXTERNAL_7842238767399919809$$APP_SPEC_TS_0$ = $r3$.ɵi18nPostprocess($MSG_EXTERNAL_7842238767399919809$$APP_SPEC_TS_0$, {
           "VAR_SELECT": "\uFFFD0\uFFFD"
         });
-        const $_c0$ = [${AttributeMarker.SelectOnly}, "ngIf"];
-        const $_c1$ = ["title", "icu only"];
+        const $_c0$ = ["title", "icu only", ${AttributeMarker.Template}, "ngIf"];
+        const $_c1$ = ["title", "icu and text", ${AttributeMarker.Template}, "ngIf"];
+        const $_c2$ = ["title", "icu only"];
         const $MSG_EXTERNAL_8806993169187953163$$APP_SPEC_TS__3$ = goog.getMsg("{VAR_SELECT, select, 10 {ten} 20 {twenty} other {other}}");
         const $I18N_EXTERNAL_8806993169187953163$$APP_SPEC_TS__3$ = $r3$.ɵi18nPostprocess($MSG_EXTERNAL_8806993169187953163$$APP_SPEC_TS__3$, {
           "VAR_SELECT": "\uFFFD0\uFFFD"
         });
         function MyComponent_div_2_Template(rf, ctx) {
           if (rf & 1) {
-            $r3$.ɵelementStart(0, "div", $_c1$);
+            $r3$.ɵelementStart(0, "div", $_c2$);
             $r3$.ɵi18n(1, $I18N_EXTERNAL_8806993169187953163$$APP_SPEC_TS__3$);
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.age));
             $r3$.ɵi18nApply(1);
           }
         }
-        const $_c2$ = ["title", "icu and text"];
+        const $_c3$ = ["title", "icu and text"];
         const $MSG_EXTERNAL_1922743304863699161$$APP_SPEC_TS__5$ = goog.getMsg("{VAR_SELECT, select, 0 {no emails} 1 {one email} other {{$interpolation} emails}}", {
           "interpolation": "\uFFFD1\uFFFD"
         });
@@ -1725,7 +1933,7 @@ describe('i18n support in the view compiler', () => {
         });
         function MyComponent_div_3_Template(rf, ctx) {
           if (rf & 1) {
-            $r3$.ɵelementStart(0, "div", $_c2$);
+            $r3$.ɵelementStart(0, "div", $_c3$);
             $r3$.ɵtext(1, " You have ");
             $r3$.ɵi18n(2, $I18N_EXTERNAL_1922743304863699161$$APP_SPEC_TS__5$);
             $r3$.ɵtext(3, ". ");
@@ -1733,6 +1941,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r1$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(2);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r1$.count));
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r1$.count));
             $r3$.ɵi18nApply(2);
@@ -1747,12 +1956,15 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵi18n(1, $I18N_EXTERNAL_7842238767399919809$$APP_SPEC_TS_0$);
             $r3$.ɵelementEnd();
             $r3$.ɵtemplate(2, MyComponent_div_2_Template, 2, 1, "div", $_c0$);
-            $r3$.ɵtemplate(3, MyComponent_div_3_Template, 4, 2, "div", $_c0$);
+            $r3$.ɵtemplate(3, MyComponent_div_3_Template, 4, 2, "div", $_c1$);
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nApply(1);
+            $r3$.ɵselect(2);
             $r3$.ɵelementProperty(2, "ngIf", $r3$.ɵbind(ctx.visible));
+            $r3$.ɵselect(3);
             $r3$.ɵelementProperty(3, "ngIf", $r3$.ɵbind(ctx.available));
           }
         }
@@ -1779,6 +1991,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.age));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.other));
             $r3$.ɵi18nApply(1);
@@ -1866,6 +2079,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nExp($r3$.ɵbind(((ctx.ageA + ctx.ageB) + ctx.ageC)));
             $r3$.ɵi18nApply(1);
@@ -1907,6 +2121,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.age));
             $r3$.ɵi18nApply(1);
@@ -1939,7 +2154,7 @@ describe('i18n support in the view compiler', () => {
         const $I18N_APP_SPEC_TS_2$ = $r3$.ɵi18nPostprocess($MSG_APP_SPEC_TS_2$, {
           "VAR_SELECT": "\uFFFD1\uFFFD"
         });
-        const $_c3$ = [${AttributeMarker.SelectOnly}, "ngIf"];
+        const $_c3$ = [${AttributeMarker.Template}, "ngIf"];
         const $MSG_APP_SPEC_TS__4$ = goog.getMsg("{VAR_SELECT, select, male {male} female {female} other {other}}");
         const $I18N_APP_SPEC_TS__4$ = $r3$.ɵi18nPostprocess($MSG_APP_SPEC_TS__4$, {
           "VAR_SELECT": "\uFFFD0:1\uFFFD"
@@ -1961,6 +2176,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.gender));
             $r3$.ɵi18nApply(0);
           }
@@ -1978,6 +2194,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(3);
             $r3$.ɵelementProperty(3, "ngIf", $r3$.ɵbind(ctx.visible));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
@@ -2019,6 +2236,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.age));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nApply(1);
@@ -2047,7 +2265,7 @@ describe('i18n support in the view compiler', () => {
         const $I18N_EXTERNAL_7842238767399919809$$APP_SPEC_TS_1$ = $r3$.ɵi18nPostprocess($MSG_EXTERNAL_7842238767399919809$$APP_SPEC_TS_1$, {
           "VAR_SELECT": "\uFFFD0\uFFFD"
         });
-        const $_c0$ = [${AttributeMarker.SelectOnly}, "ngIf"];
+        const $_c0$ = [${AttributeMarker.Template}, "ngIf"];
         const $MSG_EXTERNAL_7068143081688428291$$APP_SPEC_TS__3$ = goog.getMsg("{VAR_SELECT, select, 10 {ten} 20 {twenty} 30 {thirty} other {other}}");
         const $I18N_EXTERNAL_7068143081688428291$$APP_SPEC_TS__3$ = $r3$.ɵi18nPostprocess($MSG_EXTERNAL_7068143081688428291$$APP_SPEC_TS__3$, {
           "VAR_SELECT": "\uFFFD0:1\uFFFD"
@@ -2066,6 +2284,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.age));
             $r3$.ɵi18nApply(0);
           }
@@ -2082,6 +2301,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(2);
             $r3$.ɵelementProperty(2, "ngIf", $r3$.ɵbind(ctx.ageVisible));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nApply(1);
@@ -2110,7 +2330,7 @@ describe('i18n support in the view compiler', () => {
         const $I18N_EXTERNAL_7825031864601787094$$APP_SPEC_TS_1$ = $r3$.ɵi18nPostprocess($MSG_EXTERNAL_7825031864601787094$$APP_SPEC_TS_1$, {
           "VAR_SELECT": "\uFFFD0\uFFFD"
         });
-        const $_c0$ = [${AttributeMarker.SelectOnly}, "ngIf"];
+        const $_c0$ = [${AttributeMarker.Template}, "ngIf"];
         const $MSG_EXTERNAL_2310343208266678305$$APP_SPEC_TS__3$ = goog.getMsg("{VAR_SELECT, select, 10 {ten} 20 {twenty} 30 {thirty} other {other: {$interpolation}}}", {
           "interpolation": "\uFFFD1:1\uFFFD"
         });
@@ -2131,6 +2351,7 @@ describe('i18n support in the view compiler', () => {
           }
           if (rf & 2) {
             const $ctx_r0$ = $r3$.ɵnextContext();
+            $r3$.ɵselect(0);
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.age));
             $r3$.ɵi18nExp($r3$.ɵbind($ctx_r0$.otherAge));
             $r3$.ɵi18nApply(0);
@@ -2148,6 +2369,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(2);
             $r3$.ɵelementProperty(2, "ngIf", $r3$.ɵbind(ctx.ageVisible));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.weight));
@@ -2190,6 +2412,7 @@ describe('i18n support in the view compiler', () => {
             $r3$.ɵelementEnd();
           }
           if (rf & 2) {
+            $r3$.ɵselect(1);
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.gender));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.weight));
             $r3$.ɵi18nExp($r3$.ɵbind(ctx.height));

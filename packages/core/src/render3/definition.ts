@@ -11,14 +11,17 @@ import '../util/ng_dev_mode';
 import {ChangeDetectionStrategy} from '../change_detection/constants';
 import {Mutable, Type} from '../interface/type';
 import {NgModuleDef} from '../metadata/ng_module';
+import {SchemaMetadata} from '../metadata/schema';
 import {ViewEncapsulation} from '../metadata/view';
 import {noSideEffects} from '../util/closure';
 import {stringify} from '../util/stringify';
 
 import {EMPTY_ARRAY, EMPTY_OBJ} from './empty';
 import {NG_COMPONENT_DEF, NG_DIRECTIVE_DEF, NG_MODULE_DEF, NG_PIPE_DEF} from './fields';
-import {BaseDef, ComponentDef, ComponentDefFeature, ComponentQuery, ComponentTemplate, ComponentType, DirectiveDef, DirectiveDefFeature, DirectiveType, DirectiveTypesOrFactory, HostBindingsFunction, PipeDef, PipeType, PipeTypesOrFactory} from './interfaces/definition';
-import {CssSelectorList} from './interfaces/projection';
+import {BaseDef, ComponentDef, ComponentDefFeature, ComponentTemplate, ComponentType, ContentQueriesFunction, DirectiveDef, DirectiveDefFeature, DirectiveType, DirectiveTypesOrFactory, FactoryFn, HostBindingsFunction, PipeDef, PipeType, PipeTypesOrFactory, ViewQueriesFunction} from './interfaces/definition';
+// while SelectorFlags is unused here, it's required so that types don't get resolved lazily
+// see: https://github.com/Microsoft/web-build-tools/issues/1050
+import {CssSelectorList, SelectorFlags} from './interfaces/projection';
 
 let _renderCompCount = 0;
 
@@ -49,7 +52,7 @@ export function defineComponent<T>(componentDefinition: {
   /**
    * Factory method used to create an instance of directive.
    */
-  factory: (t: Type<T>| null) => T;
+  factory: FactoryFn<T>;
 
   /**
    * The number of nodes, local refs, and pipes in this component template.
@@ -133,10 +136,7 @@ export function defineComponent<T>(componentDefinition: {
   /**
    * Function to create instances of content queries associated with a given directive.
    */
-  contentQueries?: ((dirIndex: number) => void);
-
-  /** Refreshes content queries associated with directives in a given view */
-  contentQueriesRefresh?: ((directiveIndex: number, queryIndex: number) => void);
+  contentQueries?: ContentQueriesFunction<T>;
 
   /**
    * Defines the name that can be used in the template to assign this directive to a variable.
@@ -189,12 +189,12 @@ export function defineComponent<T>(componentDefinition: {
    * execution is different as compared to all other instructions (after change detection hooks but
    * before view hooks).
    */
-  viewQuery?: ComponentQuery<T>| null;
+  viewQuery?: ViewQueriesFunction<T>| null;
 
   /**
    * A list of optional features to apply.
    *
-   * See: {@link ProvidersFeature}
+   * See: {@link NgOnChangesFeature}, {@link ProvidersFeature}
    */
   features?: ComponentDefFeature[];
 
@@ -237,6 +237,11 @@ export function defineComponent<T>(componentDefinition: {
    * `PipeDefs`s. The function is necessary to be able to support forward declarations.
    */
   pipes?: PipeTypesOrFactory | null;
+
+  /**
+   * The set of schemas that declare elements to be allowed in the component's template.
+   */
+  schemas?: SchemaMetadata[] | null;
 }): never {
   const type = componentDefinition.type;
   const typePrototype = type.prototype;
@@ -251,12 +256,11 @@ export function defineComponent<T>(componentDefinition: {
     ngContentSelectors: componentDefinition.ngContentSelectors,
     hostBindings: componentDefinition.hostBindings || null,
     contentQueries: componentDefinition.contentQueries || null,
-    contentQueriesRefresh: componentDefinition.contentQueriesRefresh || null,
     declaredInputs: declaredInputs,
     inputs: null !,   // assigned in noSideEffects
     outputs: null !,  // assigned in noSideEffects
     exportAs: componentDefinition.exportAs || null,
-    onChanges: typePrototype.ngOnChanges || null,
+    onChanges: null,
     onInit: typePrototype.ngOnInit || null,
     doCheck: typePrototype.ngDoCheck || null,
     afterContentInit: typePrototype.ngAfterContentInit || null,
@@ -277,6 +281,8 @@ export function defineComponent<T>(componentDefinition: {
     id: 'c',
     styles: componentDefinition.styles || EMPTY_ARRAY,
     _: null as never,
+    setInput: null,
+    schemas: componentDefinition.schemas || null,
   };
   def._ = noSideEffects(() => {
     const directiveTypes = componentDefinition.directives !;
@@ -295,6 +301,13 @@ export function defineComponent<T>(componentDefinition: {
         null;
   }) as never;
   return def as never;
+}
+
+export function setComponentScope(
+    type: ComponentType<any>, directives: Type<any>[], pipes: Type<any>[]): void {
+  const def = (type.ngComponentDef as ComponentDef<any>);
+  def.directiveDefs = () => directives.map(extractDirectiveDef);
+  def.pipeDefs = () => pipes.map(extractPipeDef);
 }
 
 export function extractDirectiveDef(type: DirectiveType<any>& ComponentType<any>):
@@ -322,6 +335,7 @@ export function defineNgModule<T>(def: {type: T} & Partial<NgModuleDef<T>>): nev
     imports: def.imports || EMPTY_ARRAY,
     exports: def.exports || EMPTY_ARRAY,
     transitiveCompileScopes: null,
+    schemas: def.schemas || null,
   };
   return res as never;
 }
@@ -381,12 +395,14 @@ export function defineNgModule<T>(def: {type: T} & Partial<NgModuleDef<T>>): nev
  *
 
  */
-function invertObject(obj: any, secondary?: any): any {
-  if (obj == null) return EMPTY_OBJ;
+function invertObject<T>(
+    obj?: {[P in keyof T]?: string | [string, string]},
+    secondary?: {[key: string]: string}): {[P in keyof T]: string} {
+  if (obj == null) return EMPTY_OBJ as any;
   const newLookup: any = {};
   for (const minifiedKey in obj) {
     if (obj.hasOwnProperty(minifiedKey)) {
-      let publicName: string = obj[minifiedKey];
+      let publicName: string|[string, string] = obj[minifiedKey] !;
       let declaredName = publicName;
       if (Array.isArray(publicName)) {
         declaredName = publicName[1];
@@ -394,7 +410,7 @@ function invertObject(obj: any, secondary?: any): any {
       }
       newLookup[publicName] = minifiedKey;
       if (secondary) {
-        (secondary[publicName] = declaredName);
+        (secondary[publicName] = declaredName as string);
       }
     }
   }
@@ -471,11 +487,11 @@ export function defineBase<T>(baseDefinition: {
    */
   outputs?: {[P in keyof T]?: string};
 }): BaseDef<T> {
-  const declaredInputs: {[P in keyof T]: P} = {} as any;
+  const declaredInputs: {[P in keyof T]: string} = {} as any;
   return {
-    inputs: invertObject(baseDefinition.inputs, declaredInputs),
+    inputs: invertObject<T>(baseDefinition.inputs as any, declaredInputs),
     declaredInputs: declaredInputs,
-    outputs: invertObject(baseDefinition.outputs),
+    outputs: invertObject<T>(baseDefinition.outputs as any),
   };
 }
 
@@ -505,7 +521,7 @@ export const defineDirective = defineComponent as any as<T>(directiveDefinition:
   /**
    * Factory method used to create an instance of directive.
    */
-  factory: (t: Type<T>| null) => T;
+  factory: FactoryFn<T>;
 
   /**
    * A map of input names.
@@ -567,7 +583,7 @@ export const defineDirective = defineComponent as any as<T>(directiveDefinition:
   /**
    * A list of optional features to apply.
    *
-   * See: {@link ProvidersFeature}, {@link InheritDefinitionFeature}
+   * See: {@link NgOnChangesFeature}, {@link ProvidersFeature}, {@link InheritDefinitionFeature}
    */
   features?: DirectiveDefFeature[];
 
@@ -579,10 +595,13 @@ export const defineDirective = defineComponent as any as<T>(directiveDefinition:
   /**
    * Function to create instances of content queries associated with a given directive.
    */
-  contentQueries?: ((directiveIndex: number) => void);
+  contentQueries?: ContentQueriesFunction<T>;
 
-  /** Refreshes content queries associated with directives in a given view */
-  contentQueriesRefresh?: ((directiveIndex: number, queryIndex: number) => void);
+  /**
+   * Additional set of instructions specific to view query processing. This could be seen as a
+   * set of instructions to be inserted into the template function.
+   */
+  viewQuery?: ViewQueriesFunction<T>| null;
 
   /**
    * Defines the name that can be used in the template to assign this directive to a variable.
@@ -614,7 +633,7 @@ export function definePipe<T>(pipeDef: {
   type: Type<T>,
 
   /** A factory for creating a pipe instance. */
-  factory: (t: Type<T>| null) => T,
+  factory: FactoryFn<T>,
 
   /** Whether the pipe is pure. */
   pure?: boolean

@@ -7,24 +7,29 @@
  */
 
 import {CustomTransformers} from '@angular/compiler-cli';
+import {setAugmentHostForTest} from '@angular/compiler-cli/src/transformers/compiler_host';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 
-import {main, mainDiagnosticsForTest} from '../../src/main';
-import {TestSupport, isInBazel, setup} from '../test_support';
+import {createCompilerHost, createProgram} from '../../ngtools2';
+import {main, mainDiagnosticsForTest, readNgcCommandLineAndConfiguration} from '../../src/main';
+import {LazyRoute} from '../../src/ngtsc/routing';
+import {resolveNpmTreeArtifact} from '../runfile_helpers';
+import {TestSupport, setup} from '../test_support';
 
 function setupFakeCore(support: TestSupport): void {
   if (!process.env.TEST_SRCDIR) {
     throw new Error('`setupFakeCore` must be run within a Bazel test');
   }
-  const fakeCore = path.join(
-      process.env.TEST_SRCDIR, 'angular/packages/compiler-cli/test/ngtsc/fake_core/npm_package');
+
+  const fakeNpmPackageDir =
+      resolveNpmTreeArtifact('angular/packages/compiler-cli/test/ngtsc/fake_core/npm_package');
 
   const nodeModulesPath = path.join(support.basePath, 'node_modules');
   const angularCoreDirectory = path.join(nodeModulesPath, '@angular/core');
 
-  fs.symlinkSync(fakeCore, angularCoreDirectory);
+  fs.symlinkSync(fakeNpmPackageDir, angularCoreDirectory, 'dir');
 }
 
 /**
@@ -40,20 +45,18 @@ export class NgtscTestEnvironment {
    * Set up a new testing environment.
    */
   static setup(): NgtscTestEnvironment {
-    if (!NgtscTestEnvironment.supported) {
-      throw new Error(`Attempting to setup ngtsc tests in an unsupported environment`);
-    }
-
     const support = setup();
     const outDir = path.join(support.basePath, 'built');
     process.chdir(support.basePath);
 
     setupFakeCore(support);
+    setAugmentHostForTest(null);
 
     const env = new NgtscTestEnvironment(support, outDir);
 
     env.write('tsconfig-base.json', `{
       "compilerOptions": {
+        "emitDecoratorMetadata": true,
         "experimentalDecorators": true,
         "skipLibCheck": true,
         "noImplicitAny": true,
@@ -63,13 +66,14 @@ export class NgtscTestEnvironment {
         "baseUrl": ".",
         "declaration": true,
         "target": "es5",
+        "newLine": "lf",
         "module": "es2015",
         "moduleResolution": "node",
         "lib": ["es6", "dom"],
         "typeRoots": ["node_modules/@types"]
       },
       "angularCompilerOptions": {
-        "enableIvy": "ngtsc"
+        "enableIvy": true
       }
     }`);
 
@@ -99,7 +103,7 @@ export class NgtscTestEnvironment {
   tsconfig(extraOpts: {[key: string]: string | boolean} = {}, extraRootDirs?: string[]): void {
     const tsconfig: {[key: string]: any} = {
       extends: './tsconfig-base.json',
-      angularCompilerOptions: {...extraOpts, enableIvy: 'ngtsc'},
+      angularCompilerOptions: {...extraOpts, enableIvy: true},
     };
     if (extraRootDirs !== undefined) {
       tsconfig.compilerOptions = {
@@ -107,6 +111,15 @@ export class NgtscTestEnvironment {
       };
     }
     this.write('tsconfig.json', JSON.stringify(tsconfig, null, 2));
+
+    if (extraOpts['_useHostForImportGeneration'] === true) {
+      const cwd = process.cwd();
+      setAugmentHostForTest({
+        fileNameToModuleName: (importedFilePath: string) => {
+          return 'root' + importedFilePath.substr(cwd.length).replace(/(\.d)?.ts$/, '');
+        }
+      });
+    }
   }
 
   /**
@@ -127,5 +140,10 @@ export class NgtscTestEnvironment {
     return mainDiagnosticsForTest(['-p', this.basePath]) as ReadonlyArray<ts.Diagnostic>;
   }
 
-  static get supported(): boolean { return isInBazel(); }
+  driveRoutes(entryPoint?: string): LazyRoute[] {
+    const {rootNames, options} = readNgcCommandLineAndConfiguration(['-p', this.basePath]);
+    const host = createCompilerHost({options});
+    const program = createProgram({rootNames, host, options});
+    return program.listLazyRoutes(entryPoint);
+  }
 }

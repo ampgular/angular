@@ -41,7 +41,7 @@ describe('compiler compliance: listen()', () => {
 
     // The template should look like this (where IDENT is a wild card for an identifier):
     const template = `
-        const $e0_attrs$ = [${AttributeMarker.SelectOnly}, "click"];
+        const $e0_attrs$ = [${AttributeMarker.Bindings}, "click"];
         …
         template: function MyComponent_Template(rf, ctx) {
           if (rf & 1) {
@@ -87,7 +87,7 @@ describe('compiler compliance: listen()', () => {
     };
 
     const template = `
-        const $e0_attrs$ = [${AttributeMarker.SelectOnly}, "click"];
+        const $e0_attrs$ = [${AttributeMarker.Bindings}, "click"];
         …
         template: function MyComponent_Template(rf, ctx) {
           if (rf & 1) {
@@ -133,8 +133,8 @@ describe('compiler compliance: listen()', () => {
     };
 
     const template = `
-        const $t0_attrs$ = [${AttributeMarker.SelectOnly}, "ngIf"];
-        const $e_attrs$ = [${AttributeMarker.SelectOnly}, "click"];
+        const $t0_attrs$ = [${AttributeMarker.Template}, "ngIf"];
+        const $e_attrs$ = [${AttributeMarker.Bindings}, "click"];
 
         function MyComponent_div_0_Template(rf, ctx) {
           if (rf & 1) {
@@ -163,6 +163,7 @@ describe('compiler compliance: listen()', () => {
             $r3$.ɵtemplate(0, MyComponent_div_0_Template, 3, 0, "div", $c0$);
           }
           if (rf & 2) {
+            $i0$.ɵselect(0);
             $i0$.ɵelementProperty(0, "ngIf", $i0$.ɵbind(ctx.showing));
           }
         }
@@ -195,7 +196,7 @@ describe('compiler compliance: listen()', () => {
     };
 
     const MyComponentDefinition = `
-        const $e0_attrs$ = [${AttributeMarker.SelectOnly}, "click"];
+        const $e0_attrs$ = [${AttributeMarker.Bindings}, "click"];
         const $e2_refs$ = ["user", ""];
         …
         MyComponent.ngComponentDef = $r3$.ɵdefineComponent({

@@ -65,6 +65,13 @@
             "title": "AngularAir",
             "url": "https://angularair.com/"
           },
+          "sdlkfjsldfkz": {
+            "desc": "A weekly German podcast for Angular on the go",
+            "logo": "",
+            "rev": true,
+            "title": "Happy Angular Podcast",
+            "url": "https://happy-angular.de/"
+          },
           "sldkfjsldjf": {
             "desc": "The live broadcast podcast all about JavaScript",
             "logo": "",
@@ -408,6 +415,12 @@
             "rev": true,
             "title": "ag-Grid",
             "url": "https://www.ag-grid.com/best-angular-2-data-grid/"
+          },          
+          "fancygrid": {
+            "desc": "Angular grid library with charts integration and server communication for Enterprise.",
+            "rev": true,
+            "title": "FancyGrid",
+            "url": "https://fancygrid.com/docs/getting-started/angular"
           },
           "jqwidgets": {
             "desc": "Angular UI Components including data grid, tree grid, pivot grid, scheduler, charts, editors and other multi-purpose components",
@@ -459,6 +472,12 @@
             "rev": true,
             "title": "Alyle UI",
             "url": "https://alyle-ui.firebaseapp.com/"
+          },
+          "nebular": {
+            "desc": "Theme System, UI Components, Auth and Security for your next Angular application.",
+            "rev": true,
+            "title": "Nebular",
+            "url": "https://akveo.github.io/nebular/"
           }
         }
       }
@@ -811,6 +830,12 @@
             "rev": true,
             "title": "Formation JavaScript (French)",
             "url": "https://formationjavascript.com/formation-angular/"
+          },
+          "humancoders-angular": {
+            "desc": "Angular trainings delivered by Human Coders (France)",
+            "rev": true,
+            "title": "Formation Angular (French)",
+            "url": "https://www.humancoders.com/formations/angular"
           },
           "wao": {
             "desc": "Onsite Angular Training delivered by We Are One Sàrl in Switzerland",

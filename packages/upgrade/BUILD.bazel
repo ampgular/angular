@@ -1,6 +1,6 @@
-package(default_visibility = ["//visibility:public"])
-
 load("//tools:defaults.bzl", "ng_module", "ng_package")
+
+package(default_visibility = ["//visibility:public"])
 
 ng_module(
     name = "upgrade",
@@ -15,7 +15,7 @@ ng_module(
         "//packages/core",
         "//packages/platform-browser",
         "//packages/platform-browser-dynamic",
-        "@ngdeps//zone.js",
+        "@npm//zone.js",
     ],
 )
 

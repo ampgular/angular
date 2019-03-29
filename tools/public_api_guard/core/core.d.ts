@@ -166,9 +166,11 @@ export declare type ContentChild = Query;
 export interface ContentChildDecorator {
     (selector: Type<any> | Function | string, opts?: {
         read?: any;
+        static?: boolean;
     }): any;
     new (selector: Type<any> | Function | string, opts?: {
         read?: any;
+        static?: boolean;
     }): ContentChild;
 }
 
@@ -184,8 +186,6 @@ export interface ContentChildrenDecorator {
         read?: any;
     }): Query;
 }
-
-export declare function createInjector(defType: any, parent?: Injector | null, additionalProviders?: StaticProvider[] | null): Injector;
 
 export declare function createPlatform(injector: Injector): PlatformRef;
 
@@ -359,6 +359,11 @@ export interface HostBinding {
 
 export declare const HostBinding: HostBindingDecorator;
 
+export interface HostBindingDecorator {
+    (hostPropertyName?: string): any;
+    new (hostPropertyName?: string): any;
+}
+
 export interface HostDecorator {
     (): any;
     new (): Host;
@@ -370,6 +375,11 @@ export interface HostListener {
 }
 
 export declare const HostListener: HostListenerDecorator;
+
+export interface HostListenerDecorator {
+    (eventName: string, args?: string[]): any;
+    new (eventName: string, args?: string[]): any;
+}
 
 export declare function inject<T>(token: Type<T> | InjectionToken<T>): T;
 export declare function inject<T>(token: Type<T> | InjectionToken<T>, flags?: InjectFlags): T | null;
@@ -451,6 +461,11 @@ export interface Input {
 }
 
 export declare const Input: InputDecorator;
+
+export interface InputDecorator {
+    (bindingPropertyName?: string): any;
+    new (bindingPropertyName?: string): any;
+}
 
 export declare function isDevMode(): boolean;
 
@@ -559,6 +574,11 @@ export interface NgModule {
 
 export declare const NgModule: NgModuleDecorator;
 
+export interface NgModuleDecorator {
+    (obj?: NgModule): TypeDecorator;
+    new (obj?: NgModule): NgModule;
+}
+
 export declare abstract class NgModuleFactory<T> {
     abstract readonly moduleType: Type<T>;
     abstract create(parentInjector: Injector | null): NgModuleRef<T>;
@@ -632,6 +652,11 @@ export interface Output {
 
 export declare const Output: OutputDecorator;
 
+export interface OutputDecorator {
+    (bindingPropertyName?: string): any;
+    new (bindingPropertyName?: string): any;
+}
+
 export declare const PACKAGE_ROOT_URL: InjectionToken<string>;
 
 export interface Pipe {
@@ -640,6 +665,11 @@ export interface Pipe {
 }
 
 export declare const Pipe: PipeDecorator;
+
+export interface PipeDecorator {
+    (obj: Pipe): TypeDecorator;
+    new (obj: Pipe): Pipe;
+}
 
 export interface PipeTransform {
     transform(value: any, ...args: any[]): any;
@@ -672,6 +702,7 @@ export interface Query {
     isViewQuery: boolean;
     read: any;
     selector: any;
+    static?: boolean;
 }
 
 export declare abstract class Query {
@@ -690,7 +721,7 @@ export declare class QueryList<T> {
     map<U>(fn: (item: T, index: number, array: T[]) => U): U[];
     notifyOnChanges(): void;
     reduce<U>(fn: (prevValue: U, curValue: T, curIndex: number, array: T[]) => U, init: U): U;
-    reset(res: Array<T | any[]>): void;
+    reset(resultsTree: Array<T | any[]>): void;
     setDirty(): void;
     some(fn: (value: T, index: number, array: T[]) => boolean): boolean;
     toArray(): T[];
@@ -949,9 +980,11 @@ export declare type ViewChild = Query;
 export interface ViewChildDecorator {
     (selector: Type<any> | Function | string, opts?: {
         read?: any;
+        static?: boolean;
     }): any;
     new (selector: Type<any> | Function | string, opts?: {
         read?: any;
+        static?: boolean;
     }): ViewChild;
 }
 

@@ -226,8 +226,11 @@ describe('compiler compliance: styling', () => {
               $r3$.ɵelement(2, "div");
             }
             if (rf & 2) {
+              $r3$.ɵselect(0);
               $r3$.ɵelementProperty(0, "@foo", $r3$.ɵbind(ctx.exp));
+              $r3$.ɵselect(1);
               $r3$.ɵelementProperty(1, "@bar", $r3$.ɵbind(undefined));
+              $r3$.ɵselect(2);
               $r3$.ɵelementProperty(2, "@baz", $r3$.ɵbind(undefined));
             }
           },
@@ -285,6 +288,7 @@ describe('compiler compliance: styling', () => {
               $r3$.ɵlistener("@myAnimation.done", function MyComponent_Template_div_animation_myAnimation_done_0_listener($event) { return ctx.onDone($event); });
               $r3$.ɵelementEnd();
             } if (rf & 2) {
+              $r3$.ɵselect(0);
               $r3$.ɵelementProperty(0, "@myAnimation", $r3$.ɵbind(ctx.exp));
             }
           },
@@ -516,7 +520,7 @@ describe('compiler compliance: styling', () => {
          };
 
          const template = `
-          const $_c0$ = [${AttributeMarker.Styles}, "opacity", "1", ${AttributeMarker.SelectOnly}, "style"];
+          const $_c0$ = [${AttributeMarker.Styles}, "opacity", "1", ${AttributeMarker.Bindings}, "style"];
           const $_c1$ = ["width", "height"];
           …
           MyComponent.ngComponentDef = $r3$.ɵdefineComponent({
@@ -538,6 +542,7 @@ describe('compiler compliance: styling', () => {
                   $r3$.ɵelementStyleProp(0, 0, $ctx$.myWidth);
                   $r3$.ɵelementStyleProp(0, 1, $ctx$.myHeight);
                   $r3$.ɵelementStylingApply(0);
+                  $r3$.ɵselect(0);
                   $r3$.ɵelementAttribute(0, "style", $r3$.ɵbind("border-width: 10px"), $r3$.ɵsanitizeStyle);
                 }
               },
@@ -713,7 +718,7 @@ describe('compiler compliance: styling', () => {
          };
 
          const template = `
-          const $e0_attrs$ = [${AttributeMarker.Classes}, "grape", ${AttributeMarker.SelectOnly}, "class"];
+          const $e0_attrs$ = [${AttributeMarker.Classes}, "grape", ${AttributeMarker.Bindings}, "class"];
           const $e0_bindings$ = ["apple", "orange"];
           …
           MyComponent.ngComponentDef = $r3$.ɵdefineComponent({
@@ -735,6 +740,7 @@ describe('compiler compliance: styling', () => {
                   $r3$.ɵelementClassProp(0, 0, $ctx$.yesToApple);
                   $r3$.ɵelementClassProp(0, 1, $ctx$.yesToOrange);
                   $r3$.ɵelementStylingApply(0);
+                  $r3$.ɵselect(0);
                   $r3$.ɵelementAttribute(0, "class", $r3$.ɵbind("banana"));
                 }
               },
@@ -769,7 +775,7 @@ describe('compiler compliance: styling', () => {
          };
 
          const template = `
-          const $e0_attrs$ = [${AttributeMarker.Classes}, "foo", ${AttributeMarker.Styles}, "width", "100px", ${AttributeMarker.SelectOnly}, "class", "style"];
+          const $e0_attrs$ = [${AttributeMarker.Classes}, "foo", ${AttributeMarker.Styles}, "width", "100px", ${AttributeMarker.Bindings}, "class", "style"];
           …
           MyComponent.ngComponentDef = $r3$.ɵdefineComponent({
               type: MyComponent,
@@ -784,6 +790,7 @@ describe('compiler compliance: styling', () => {
                   $r3$.ɵelement(0, "div", $e0_attrs$);
                 }
                 if (rf & 2) {
+                  $r3$.ɵselect(0);
                   $r3$.ɵelementAttribute(0, "class", $r3$.ɵbind("round"));
                   $r3$.ɵelementAttribute(0, "style", $r3$.ɵbind("height:100px"), $r3$.ɵsanitizeStyle);
                 }
@@ -930,6 +937,7 @@ describe('compiler compliance: styling', () => {
               $r3$.ɵelementStyleProp(0, 1, $r3$.ɵpipeBind2(3, 7, $ctx$.bazExp, 4000));
               $r3$.ɵelementClassProp(0, 0, $r3$.ɵpipeBind2(4, 10, $ctx$.fooExp, 2000));
               $r3$.ɵelementStylingApply(0);
+              $r3$.ɵselect(5);
               $r3$.ɵtextBinding(5, $r3$.ɵinterpolation1(" ", $ctx$.item, ""));
             }
           }
@@ -982,14 +990,14 @@ describe('compiler compliance: styling', () => {
           …
           hostBindings: function MyComponent_HostBindings(rf, ctx, elIndex) {
             if (rf & 1) {
-              $r3$.ɵelementHostAttrs(ctx, $e0_attrs$);
-              $r3$.ɵelementStyling($e0_classBindings$, $e0_styleBindings$, $r3$.ɵdefaultStyleSanitizer, ctx);
+              $r3$.ɵelementHostAttrs($e0_attrs$);
+              $r3$.ɵelementHostStyling($e0_classBindings$, $e0_styleBindings$, $r3$.ɵdefaultStyleSanitizer);
             }
             if (rf & 2) {
-              $r3$.ɵelementStylingMap(elIndex, ctx.myClass, ctx.myStyle, ctx);
-              $r3$.ɵelementStyleProp(elIndex, 0, ctx.myColorProp, null, ctx);
-              $r3$.ɵelementClassProp(elIndex, 0, ctx.myFooClass, ctx);
-              $r3$.ɵelementStylingApply(elIndex, ctx);
+              $r3$.ɵelementHostStylingMap(ctx.myClass, ctx.myStyle);
+              $r3$.ɵelementHostStyleProp(0, ctx.myColorProp);
+              $r3$.ɵelementHostClassProp(0, ctx.myFooClass);
+              $r3$.ɵelementHostStylingApply();
             }
           },
           consts: 0,
@@ -1043,15 +1051,15 @@ describe('compiler compliance: styling', () => {
           …
           hostBindings: function MyComponent_HostBindings(rf, ctx, elIndex) {
             if (rf & 1) {
-              $r3$.ɵelementStyling(_c0, _c1, $r3$.ɵdefaultStyleSanitizer, ctx);
+              $r3$.ɵelementHostStyling(_c0, _c1, $r3$.ɵdefaultStyleSanitizer);
             }
             if (rf & 2) {
-              $r3$.ɵelementStylingMap(elIndex, ctx.myClasses, ctx.myStyle, ctx);
-              $r3$.ɵelementStyleProp(elIndex, 0, ctx.myHeightProp, "pt", ctx);
-              $r3$.ɵelementStyleProp(elIndex, 1, ctx.myWidthProp, null, ctx);
-              $r3$.ɵelementClassProp(elIndex, 0, ctx.myBarClass, ctx);
-              $r3$.ɵelementClassProp(elIndex, 1, ctx.myFooClass, ctx);
-              $r3$.ɵelementStylingApply(elIndex, ctx);
+              $r3$.ɵelementHostStylingMap(ctx.myClasses, ctx.myStyle);
+              $r3$.ɵelementHostStyleProp(0, ctx.myHeightProp, "pt");
+              $r3$.ɵelementHostStyleProp(1, ctx.myWidthProp);
+              $r3$.ɵelementHostClassProp(0, ctx.myBarClass);
+              $r3$.ɵelementHostClassProp(1, ctx.myFooClass);
+              $r3$.ɵelementHostStylingApply();
             }
           },
           consts: 0,
@@ -1061,6 +1069,84 @@ describe('compiler compliance: styling', () => {
       const result = compile(files, angularFiles);
       expectEmit(result.source, template, 'Incorrect template');
     });
+
+    it('should generate override instructions for only single-level styling bindings when !important is present',
+       () => {
+         const files = {
+           app: {
+             'spec.ts': `
+                import {Component, NgModule, HostBinding} from '@angular/core';
+
+                @Component({
+                  selector: 'my-component',
+                  template: \`
+                    <div [style!important]="myStyleExp"
+                         [class!important]="myClassExp"
+                         [style.height!important]="myHeightExp"
+                         [class.bar!important]="myBarClassExp"></div>
+                  \`,
+                  host: {
+                    '[style!important]': 'myStyleExp',
+                    '[class!important]': 'myClassExp'
+                  }
+                })
+                export class MyComponent {
+                  @HostBinding('class.foo!important')
+                  myFooClassExp = true;
+
+                  @HostBinding('style.width!important')
+                  myWidthExp = '100px';
+
+                  myBarClassExp = true;
+                  myHeightExp = '200px';
+                }
+
+                @NgModule({declarations: [MyComponent]})
+                export class MyModule {}
+            `
+           }
+         };
+
+         const template = `
+            const _c2 = ["bar"];
+            const _c3 = ["height"];
+            …
+            function MyComponent_Template(rf, ctx) {
+              if (rf & 1) {
+                $r3$.ɵelementStart(0, "div");
+                $r3$.ɵelementStyling(_c2, _c3, $r3$.ɵdefaultStyleSanitizer);
+                $r3$.ɵelementEnd();
+              }
+              if (rf & 2) {
+                $r3$.ɵelementStylingMap(0, ctx.myClassExp, ctx.myStyleExp);
+                $r3$.ɵelementStyleProp(0, 0, ctx.myHeightExp, null, true);
+                $r3$.ɵelementClassProp(0, 0, ctx.myBarClassExp, true);
+                $r3$.ɵelementStylingApply(0);
+              }
+            },
+          `;
+
+         const hostBindings = `
+            const _c0 = ["foo"];
+            const _c1 = ["width"];
+            …
+            hostBindings: function MyComponent_HostBindings(rf, ctx, elIndex) {
+              if (rf & 1) {
+                $r3$.ɵelementHostStyling(_c0, _c1, $r3$.ɵdefaultStyleSanitizer);
+              }
+              if (rf & 2) {
+                $r3$.ɵelementHostStylingMap(ctx.myClassExp, ctx.myStyleExp);
+                $r3$.ɵelementHostStyleProp(0, ctx.myWidthExp, null, true);
+                $r3$.ɵelementHostClassProp(0, ctx.myFooClassExp, true);
+                $r3$.ɵelementHostStylingApply();
+              }
+            },
+          `;
+
+         const result = compile(files, angularFiles);
+         expectEmit(result.source, hostBindings, 'Incorrect template');
+         expectEmit(result.source, template, 'Incorrect template');
+       });
 
     it('should generate styling instructions for multiple directives that contain host binding definitions',
        () => {
@@ -1095,9 +1181,7 @@ describe('compiler compliance: styling', () => {
 
                 @Component({
                   selector: 'my-component',
-                  template: '
-                    <div myWidthDir myHeightDir myClassDir></div>
-                  ',
+                  template: '<div myWidthDir myHeightDir myClassDir></div>',
                 })
                 export class MyComponent {
                 }
@@ -1116,33 +1200,33 @@ describe('compiler compliance: styling', () => {
           …
           function ClassDirective_HostBindings(rf, ctx, elIndex) {
             if (rf & 1) {
-              $r3$.ɵelementStyling(null, null, null, ctx);
+              $r3$.ɵelementHostStyling();
             }
             if (rf & 2) {
-              $r3$.ɵelementStylingMap(elIndex, ctx.myClassMap, null, ctx);
-              $r3$.ɵelementStylingApply(elIndex, ctx);
+              $r3$.ɵelementHostStylingMap(ctx.myClassMap);
+              $r3$.ɵelementHostStylingApply();
             }
           }
           …
           function WidthDirective_HostBindings(rf, ctx, elIndex) {
             if (rf & 1) {
-              $r3$.ɵelementStyling($widthDir_classes$, $widthDir_styles$, null, ctx);
+              $r3$.ɵelementHostStyling($widthDir_classes$, $widthDir_styles$);
             }
             if (rf & 2) {
-              $r3$.ɵelementStyleProp(elIndex, 0, ctx.myWidth, null, ctx);
-              $r3$.ɵelementClassProp(elIndex, 0, ctx.myFooClass, ctx);
-              $r3$.ɵelementStylingApply(elIndex, ctx);
+              $r3$.ɵelementHostStyleProp(0, ctx.myWidth);
+              $r3$.ɵelementHostClassProp(0, ctx.myFooClass);
+              $r3$.ɵelementHostStylingApply();
             }
           }
           …
           function HeightDirective_HostBindings(rf, ctx, elIndex) {
             if (rf & 1) {
-              $r3$.ɵelementStyling($heightDir_classes$, $heightDir_styles$, null, ctx);
+              $r3$.ɵelementHostStyling($heightDir_classes$, $heightDir_styles$);
             }
             if (rf & 2) {
-              $r3$.ɵelementStyleProp(elIndex, 0, ctx.myHeight, null, ctx);
-              $r3$.ɵelementClassProp(elIndex, 0, ctx.myBarClass, ctx);
-              $r3$.ɵelementStylingApply(elIndex, ctx);
+              $r3$.ɵelementHostStyleProp(0, ctx.myHeight);
+              $r3$.ɵelementHostClassProp(0, ctx.myBarClass);
+              $r3$.ɵelementHostStylingApply();
             }
           }
           …
@@ -1197,14 +1281,14 @@ describe('compiler compliance: styling', () => {
       hostBindings: function MyComponent_HostBindings(rf, ctx, elIndex) {
         if (rf & 1) {
           $r3$.ɵallocHostVars(2);
-          $r3$.ɵelementHostAttrs(ctx, $_c0$);
-          $r3$.ɵelementStyling(null, null, $r3$.ɵdefaultStyleSanitizer, ctx);
+          $r3$.ɵelementHostAttrs($_c0$);
+          $r3$.ɵelementHostStyling(null, null, $r3$.ɵdefaultStyleSanitizer);
         }
         if (rf & 2) {
           $r3$.ɵelementProperty(elIndex, "id", $r3$.ɵbind(ctx.id), null, true);
           $r3$.ɵelementProperty(elIndex, "title", $r3$.ɵbind(ctx.title), null, true);
-          $r3$.ɵelementStylingMap(elIndex, ctx.myClass, ctx.myStyle, ctx);
-          $r3$.ɵelementStylingApply(elIndex, ctx);
+          $r3$.ɵelementHostStylingMap(ctx.myClass, ctx.myStyle);
+          $r3$.ɵelementHostStylingApply();
         }
       }
     `;
@@ -1244,14 +1328,14 @@ describe('compiler compliance: styling', () => {
       hostBindings: function WidthDirective_HostBindings(rf, ctx, elIndex) {
         if (rf & 1) {
           $r3$.ɵallocHostVars(2);
-          $r3$.ɵelementStyling($_c0$, $_c1$, null, ctx);
+          $r3$.ɵelementHostStyling($_c0$, $_c1$);
         }
         if (rf & 2) {
           $r3$.ɵelementProperty(elIndex, "id", $r3$.ɵbind(ctx.id), null, true);
           $r3$.ɵelementProperty(elIndex, "title", $r3$.ɵbind(ctx.title), null, true);
-          $r3$.ɵelementStyleProp(elIndex, 0, ctx.myWidth, null, ctx);
-          $r3$.ɵelementClassProp(elIndex, 0, ctx.myFooClass, ctx);
-          $r3$.ɵelementStylingApply(elIndex, ctx);
+          $r3$.ɵelementHostStyleProp(0, ctx.myWidth);
+          $r3$.ɵelementHostClassProp(0, ctx.myFooClass);
+          $r3$.ɵelementHostStylingApply();
         }
       }
     `;

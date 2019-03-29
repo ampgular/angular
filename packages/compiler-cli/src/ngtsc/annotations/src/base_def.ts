@@ -7,30 +7,34 @@
  */
 
 import {R3BaseRefMetaData, compileBaseDefFromMetadata} from '@angular/compiler';
-import * as ts from 'typescript';
 
 import {PartialEvaluator} from '../../partial_evaluator';
-import {ClassMember, Decorator, ReflectionHost} from '../../reflection';
-import {AnalysisOutput, CompileResult, DecoratorHandler} from '../../transform';
-import {isAngularCore} from './util';
+import {ClassDeclaration, ClassMember, Decorator, ReflectionHost} from '../../reflection';
+import {AnalysisOutput, CompileResult, DecoratorHandler, DetectResult, HandlerPrecedence} from '../../transform';
 
-function containsNgTopLevelDecorator(decorators: Decorator[] | null): boolean {
+import {isAngularDecorator} from './util';
+
+function containsNgTopLevelDecorator(decorators: Decorator[] | null, isCore: boolean): boolean {
   if (!decorators) {
     return false;
   }
-  return decorators.find(
-             decorator => (decorator.name === 'Component' || decorator.name === 'Directive' ||
-                           decorator.name === 'NgModule') &&
-                 isAngularCore(decorator)) !== undefined;
+  return decorators.some(
+      decorator => isAngularDecorator(decorator, 'Component', isCore) ||
+          isAngularDecorator(decorator, 'Directive', isCore) ||
+          isAngularDecorator(decorator, 'NgModule', isCore));
 }
 
 export class BaseDefDecoratorHandler implements
     DecoratorHandler<R3BaseRefMetaData, R3BaseRefDecoratorDetection> {
-  constructor(private reflector: ReflectionHost, private evaluator: PartialEvaluator) {}
+  constructor(
+      private reflector: ReflectionHost, private evaluator: PartialEvaluator,
+      private isCore: boolean) {}
 
-  detect(node: ts.ClassDeclaration, decorators: Decorator[]|null): R3BaseRefDecoratorDetection
-      |undefined {
-    if (containsNgTopLevelDecorator(decorators)) {
+  readonly precedence = HandlerPrecedence.WEAK;
+
+  detect(node: ClassDeclaration, decorators: Decorator[]|null):
+      DetectResult<R3BaseRefDecoratorDetection>|undefined {
+    if (containsNgTopLevelDecorator(decorators, this.isCore)) {
       // If the class is already decorated by @Component or @Directive let that
       // DecoratorHandler handle this. BaseDef is unnecessary.
       return undefined;
@@ -42,12 +46,11 @@ export class BaseDefDecoratorHandler implements
       const {decorators} = property;
       if (decorators) {
         for (const decorator of decorators) {
-          const decoratorName = decorator.name;
-          if (decoratorName === 'Input' && isAngularCore(decorator)) {
+          if (isAngularDecorator(decorator, 'Input', this.isCore)) {
             result = result || {};
             const inputs = result.inputs = result.inputs || [];
             inputs.push({decorator, property});
-          } else if (decoratorName === 'Output' && isAngularCore(decorator)) {
+          } else if (isAngularDecorator(decorator, 'Output', this.isCore)) {
             result = result || {};
             const outputs = result.outputs = result.outputs || [];
             outputs.push({decorator, property});
@@ -56,10 +59,17 @@ export class BaseDefDecoratorHandler implements
       }
     });
 
-    return result;
+    if (result !== undefined) {
+      return {
+        metadata: result,
+        trigger: null,
+      };
+    } else {
+      return undefined;
+    }
   }
 
-  analyze(node: ts.ClassDeclaration, metadata: R3BaseRefDecoratorDetection):
+  analyze(node: ClassDeclaration, metadata: R3BaseRefDecoratorDetection):
       AnalysisOutput<R3BaseRefMetaData> {
     const analysis: R3BaseRefMetaData = {};
     if (metadata.inputs) {
@@ -103,7 +113,7 @@ export class BaseDefDecoratorHandler implements
     return {analysis};
   }
 
-  compile(node: ts.Declaration, analysis: R3BaseRefMetaData): CompileResult[]|CompileResult {
+  compile(node: ClassDeclaration, analysis: R3BaseRefMetaData): CompileResult[]|CompileResult {
     const {expression, type} = compileBaseDefFromMetadata(analysis);
 
     return {

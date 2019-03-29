@@ -21,9 +21,20 @@ const NODE_MODULES_PACKAGE_NAME = /node_modules\/((\w|-|\.)+|(@(\w|-|\.)+\/(\w|-
 const EXT = /(\.ts|\.d\.ts|\.js|\.jsx|\.tsx)$/;
 const CSS_PREPROCESSOR_EXT = /(\.scss|\.less|\.styl)$/;
 
+let augmentHostForTest: {[name: string]: Function}|null = null;
+
+export function setAugmentHostForTest(augmentation: {[name: string]: Function} | null): void {
+  augmentHostForTest = augmentation;
+}
+
 export function createCompilerHost(
     {options, tsHost = ts.createCompilerHost(options, true)}:
         {options: CompilerOptions, tsHost?: ts.CompilerHost}): CompilerHost {
+  if (augmentHostForTest !== null) {
+    for (const name of Object.keys(augmentHostForTest)) {
+      (tsHost as any)[name] = augmentHostForTest[name];
+    }
+  }
   return tsHost;
 }
 
@@ -358,10 +369,15 @@ export class TsCompilerAotCompilerTypeCheckHostAdapter implements ts.CompilerHos
         /* emitSourceMaps */ false);
     const sf = ts.createSourceFile(
         genFile.genFileUrl, sourceText, this.options.target || ts.ScriptTarget.Latest);
-    if ((this.options.module === ts.ModuleKind.AMD || this.options.module === ts.ModuleKind.UMD) &&
-        this.context.amdModuleName) {
-      const moduleName = this.context.amdModuleName(sf);
-      if (moduleName) sf.moduleName = moduleName;
+    if (this.options.module === ts.ModuleKind.AMD || this.options.module === ts.ModuleKind.UMD) {
+      if (this.context.amdModuleName) {
+        const moduleName = this.context.amdModuleName(sf);
+        if (moduleName) sf.moduleName = moduleName;
+      } else if (/node_modules/.test(genFile.genFileUrl)) {
+        // If we are generating an ngModule file under node_modules, we know the right module name
+        // We don't need the host to supply a function in this case.
+        sf.moduleName = stripNodeModulesPrefix(genFile.genFileUrl.replace(EXT, ''));
+      }
     }
     this.generatedSourceFiles.set(genFile.genFileUrl, {
       sourceFile: sf,

@@ -671,8 +671,8 @@ export function animate(
  *
  * ```typescript
  * group([
- *   animate("1s", { background: "black" }))
- *   animate("2s", { color: "white" }))
+ *   animate("1s", style({ background: "black" })),
+ *   animate("2s", style({ color: "white" }))
  * ])
  * ```
  *
@@ -708,7 +708,7 @@ export function group(
  * ```typescript
  * sequence([
  *   style({ opacity: 0 })),
- *   animate("1s", { opacity: 1 }))
+ *   animate("1s", style({ opacity: 1 }))
  * ])
  * ```
  *
@@ -1103,7 +1103,7 @@ export function animation(
  * for a child animation to run, the parent animation must query each of the elements
  * containing child animations, and run them using this function.
  *
- * Note that this feature designed to be used with `query()` and it will only work
+ * Note that this feature is designed to be used with `query()` and it will only work
  * with animations that are assigned using the Angular animation library. CSS keyframes
  * and transitions are not handled by this API.
  *

@@ -6,13 +6,13 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {WrappedNodeExpr} from '@angular/compiler';
 import * as ts from 'typescript';
 
-import {AbsoluteReference, Reference, TsReferenceResolver} from '../../imports';
+import {Reference} from '../../imports';
 import {TypeScriptReflectionHost} from '../../reflection';
 import {getDeclaration, makeProgram} from '../../testing/in_memory_typescript';
-import {PartialEvaluator} from '../src/interface';
+import {DynamicValue} from '../src/dynamic';
+import {ForeignFunctionResolver, PartialEvaluator} from '../src/interface';
 import {EnumValue, ResolvedValue} from '../src/result';
 
 function makeSimpleProgram(contents: string): ts.Program {
@@ -41,12 +41,12 @@ function makeExpression(
 }
 
 function evaluate<T extends ResolvedValue>(
-    code: string, expr: string, supportingFiles: {name: string, contents: string}[] = []): T {
+    code: string, expr: string, supportingFiles: {name: string, contents: string}[] = [],
+    foreignFunctionResolver?: ForeignFunctionResolver): T {
   const {expression, checker, program, options, host} = makeExpression(code, expr, supportingFiles);
   const reflectionHost = new TypeScriptReflectionHost(checker);
-  const resolver = new TsReferenceResolver(program, checker, options, host);
-  const evaluator = new PartialEvaluator(reflectionHost, checker, resolver);
-  return evaluator.evaluate(expression) as T;
+  const evaluator = new PartialEvaluator(reflectionHost, checker);
+  return evaluator.evaluate(expression, foreignFunctionResolver) as T;
 }
 
 describe('ngtsc metadata', () => {
@@ -150,22 +150,17 @@ describe('ngtsc metadata', () => {
     const reflectionHost = new TypeScriptReflectionHost(checker);
     const result = getDeclaration(program, 'entry.ts', 'target$', ts.isVariableDeclaration);
     const expr = result.initializer !;
-    const resolver = new TsReferenceResolver(program, checker, options, host);
-    const evaluator = new PartialEvaluator(reflectionHost, checker, resolver);
+    const evaluator = new PartialEvaluator(reflectionHost, checker);
     const resolved = evaluator.evaluate(expr);
     if (!(resolved instanceof Reference)) {
       return fail('Expected expression to resolve to a reference');
     }
     expect(ts.isFunctionDeclaration(resolved.node)).toBe(true);
-    expect(resolved.expressable).toBe(true);
-    const reference = resolved.toExpression(program.getSourceFile('entry.ts') !);
-    if (!(reference instanceof WrappedNodeExpr)) {
-      return fail('Expected expression reference to be a wrapped node');
+    const reference = resolved.getIdentityIn(program.getSourceFile('entry.ts') !);
+    if (reference === null) {
+      return fail('Expected to get an identifier');
     }
-    if (!ts.isIdentifier(reference.node)) {
-      return fail('Expected expression to be an Identifier');
-    }
-    expect(reference.node.getSourceFile()).toEqual(program.getSourceFile('entry.ts') !);
+    expect(reference.getSourceFile()).toEqual(program.getSourceFile('entry.ts') !);
   });
 
   it('absolute imports work', () => {
@@ -183,23 +178,16 @@ describe('ngtsc metadata', () => {
     const reflectionHost = new TypeScriptReflectionHost(checker);
     const result = getDeclaration(program, 'entry.ts', 'target$', ts.isVariableDeclaration);
     const expr = result.initializer !;
-    const resolver = new TsReferenceResolver(program, checker, options, host);
-    const evaluator = new PartialEvaluator(reflectionHost, checker, resolver);
+    const evaluator = new PartialEvaluator(reflectionHost, checker);
     const resolved = evaluator.evaluate(expr);
-    if (!(resolved instanceof AbsoluteReference)) {
+    if (!(resolved instanceof Reference)) {
       return fail('Expected expression to resolve to an absolute reference');
     }
-    expect(resolved.moduleName).toBe('some_library');
+    expect(owningModuleOf(resolved)).toBe('some_library');
     expect(ts.isFunctionDeclaration(resolved.node)).toBe(true);
-    expect(resolved.expressable).toBe(true);
-    const reference = resolved.toExpression(program.getSourceFile('entry.ts') !);
-    if (!(reference instanceof WrappedNodeExpr)) {
-      return fail('Expected expression reference to be a wrapped node');
-    }
-    if (!ts.isIdentifier(reference.node)) {
-      return fail('Expected expression to be an Identifier');
-    }
-    expect(reference.node.getSourceFile()).toEqual(program.getSourceFile('entry.ts') !);
+    const reference = resolved.getIdentityIn(program.getSourceFile('entry.ts') !);
+    expect(reference).not.toBeNull();
+    expect(reference !.getSourceFile()).toEqual(program.getSourceFile('entry.ts') !);
   });
 
   it('reads values from default exports', () => {
@@ -281,4 +269,79 @@ describe('ngtsc metadata', () => {
     ]);
     expect(value instanceof Reference).toBe(true);
   });
+
+  it('should resolve shorthand properties to values', () => {
+    const {program} = makeProgram([
+      {name: 'entry.ts', contents: `const prop = 42; const target$ = {prop};`},
+    ]);
+    const checker = program.getTypeChecker();
+    const reflectionHost = new TypeScriptReflectionHost(checker);
+    const result = getDeclaration(program, 'entry.ts', 'target$', ts.isVariableDeclaration);
+    const expr = result.initializer !as ts.ObjectLiteralExpression;
+    const prop = expr.properties[0] as ts.ShorthandPropertyAssignment;
+    const evaluator = new PartialEvaluator(reflectionHost, checker);
+    const resolved = evaluator.evaluate(prop.name);
+    expect(resolved).toBe(42);
+  });
+
+  it('should resolve dynamic values in object literals', () => {
+    const {program} = makeProgram([
+      {name: 'decl.d.ts', contents: 'export declare const fn: any;'},
+      {
+        name: 'entry.ts',
+        contents: `import {fn} from './decl'; const prop = fn.foo(); const target$ = {value: prop};`
+      },
+    ]);
+    const checker = program.getTypeChecker();
+    const reflectionHost = new TypeScriptReflectionHost(checker);
+    const result = getDeclaration(program, 'entry.ts', 'target$', ts.isVariableDeclaration);
+    const expr = result.initializer !as ts.ObjectLiteralExpression;
+    const evaluator = new PartialEvaluator(reflectionHost, checker);
+    const resolved = evaluator.evaluate(expr);
+    if (!(resolved instanceof Map)) {
+      return fail('Should have resolved to a Map');
+    }
+    const value = resolved.get('value') !;
+    if (!(value instanceof DynamicValue)) {
+      return fail(`Should have resolved 'value' to a DynamicValue`);
+    }
+    const prop = expr.properties[0] as ts.PropertyAssignment;
+    expect(value.node).toBe(prop.initializer);
+  });
+
+  it('should resolve enums in template expressions', () => {
+    const value =
+        evaluate(`enum Test { VALUE = 'test', } const value = \`a.\${Test.VALUE}.b\`;`, 'value');
+    expect(value).toBe('a.test.b');
+  });
+
+  it('should not attach identifiers to FFR-resolved values', () => {
+    const value = evaluate(
+        `
+    declare function foo(arg: any): any;
+    class Target {}
+
+    const indir = foo(Target);
+    const value = indir;
+  `,
+        'value', [], firstArgFfr);
+    if (!(value instanceof Reference)) {
+      return fail('Expected value to be a Reference');
+    }
+    const id = value.getIdentityIn(value.node.getSourceFile());
+    if (id === null) {
+      return fail('Expected value to have an identity');
+    }
+    expect(id.text).toEqual('Target');
+  });
 });
+
+function owningModuleOf(ref: Reference): string|null {
+  return ref.bestGuessOwningModule !== null ? ref.bestGuessOwningModule.specifier : null;
+}
+
+function firstArgFfr(
+    node: Reference<ts.FunctionDeclaration|ts.MethodDeclaration|ts.FunctionExpression>,
+    args: ReadonlyArray<ts.Expression>): ts.Expression {
+  return args[0];
+}

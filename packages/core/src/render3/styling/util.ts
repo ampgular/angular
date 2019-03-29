@@ -14,29 +14,71 @@ import {LContext} from '../interfaces/context';
 import {AttributeMarker, TAttributes, TNode, TNodeFlags} from '../interfaces/node';
 import {PlayState, Player, PlayerContext, PlayerIndex} from '../interfaces/player';
 import {RElement} from '../interfaces/renderer';
-import {InitialStylingValues, StylingContext, StylingFlags, StylingIndex} from '../interfaces/styling';
+import {DirectiveRegistryValuesIndex, InitialStylingValues, StylingContext, StylingFlags, StylingIndex} from '../interfaces/styling';
 import {HEADER_OFFSET, HOST, LView, RootContext} from '../interfaces/view';
-import {getTNode} from '../util';
+import {getTNode, isStylingContext} from '../util/view_utils';
 
 import {CorePlayerHandler} from './core_player_handler';
 
-const ANIMATION_PROP_PREFIX = '@';
+export const ANIMATION_PROP_PREFIX = '@';
 
 export function createEmptyStylingContext(
-    element?: RElement | null, sanitizer?: StyleSanitizeFn | null,
+    wrappedElement?: LContainer | LView | RElement | null, sanitizer?: StyleSanitizeFn | null,
     initialStyles?: InitialStylingValues | null,
     initialClasses?: InitialStylingValues | null): StylingContext {
-  return [
-    0,                                     // MasterFlags
-    [null, -1, false, sanitizer || null],  // DirectiveRefs
-    initialStyles || [null],               // InitialStyles
-    initialClasses || [null],              // InitialClasses
-    [0, 0],                                // SinglePropOffsets
-    element || null,                       // Element
-    null,                                  // PreviousMultiClassValue
-    null,                                  // PreviousMultiStyleValue
-    null,                                  // PlayerContext
+  const context: StylingContext = [
+    wrappedElement || null,          // Element
+    0,                               // MasterFlags
+    [] as any,                       // DirectiveRefs (this gets filled below)
+    initialStyles || [null, null],   // InitialStyles
+    initialClasses || [null, null],  // InitialClasses
+    [0, 0],                          // SinglePropOffsets
+    [0],                             // CachedMultiClassValue
+    [0],                             // CachedMultiStyleValue
+    null,                            // PlayerContext
   ];
+
+  // whenever a context is created there is always a `null` directive
+  // that is registered (which is a placeholder for the "template").
+  allocateDirectiveIntoContext(context, null);
+  return context;
+}
+
+/**
+ * Allocates (registers) a directive into the directive registry within the provided styling
+ * context.
+ *
+ * For each and every `[style]`, `[style.prop]`, `[class]`, `[class.name]` binding
+ * (as well as static style and class attributes) a directive, component or template
+ * is marked as the owner. When an owner is determined (this happens when the template
+ * is first passed over) the directive owner is allocated into the styling context. When
+ * this happens, each owner gets its own index value. This then ensures that once any
+ * style and/or class binding are assigned into the context then they are marked to
+ * that directive's index value.
+ *
+ * @param context the target StylingContext
+ * @param directiveRef the directive that will be allocated into the context
+ * @returns the index where the directive was inserted into
+ */
+export function allocateDirectiveIntoContext(
+    context: StylingContext, directiveRef: any | null): number {
+  // this is a new directive which we have not seen yet.
+  const dirs = context[StylingIndex.DirectiveRegistryPosition];
+  const i = dirs.length;
+
+  // we preemptively make space into the directives array and then
+  // assign values slot-by-slot to ensure that if the directive ordering
+  // changes then it will still function
+  dirs.push(null, null, null, null);
+  dirs[i + DirectiveRegistryValuesIndex.DirectiveValueOffset] = directiveRef;
+  dirs[i + DirectiveRegistryValuesIndex.DirtyFlagOffset] = false;
+  dirs[i + DirectiveRegistryValuesIndex.StyleSanitizerOffset] = null;
+
+  // -1 is used to signal that the directive has been allocated, but
+  // no actual style or class bindings have been registered yet...
+  dirs[i + DirectiveRegistryValuesIndex.SinglePropValuesIndexOffset] = -1;
+
+  return i;
 }
 
 /**
@@ -49,6 +91,16 @@ export function allocStylingContext(
     element: RElement | null, templateStyleContext: StylingContext): StylingContext {
   // each instance gets a copy
   const context = templateStyleContext.slice() as any as StylingContext;
+
+  // the HEADER values contain arrays which also need
+  // to be copied over into the new context
+  for (let i = 0; i < StylingIndex.SingleStylesStartPosition; i++) {
+    const value = templateStyleContext[i];
+    if (Array.isArray(value)) {
+      context[i] = value.slice();
+    }
+  }
+
   context[StylingIndex.ElementPosition] = element;
 
   // this will prevent any other directives from extending the context
@@ -78,7 +130,7 @@ export function getStylingContext(index: number, viewData: LView): StylingContex
   }
 
   if (isStylingContext(wrapper)) {
-    return wrapper as StylingContext;
+    return wrapper;
   } else {
     // This is an LView or an LContainer
     const stylingTemplate = getTNode(index - HEADER_OFFSET, viewData).stylingTemplate;
@@ -93,14 +145,37 @@ export function getStylingContext(index: number, viewData: LView): StylingContex
   }
 }
 
-export function isStylingContext(value: any): value is StylingContext {
-  // Not an LView or an LContainer
-  return Array.isArray(value) && typeof value[StylingIndex.MasterFlagPosition] === 'number' &&
-      Array.isArray(value[StylingIndex.InitialStyleValuesPosition]);
-}
 
 export function isAnimationProp(name: string): boolean {
   return name[0] === ANIMATION_PROP_PREFIX;
+}
+
+export function hasClassInput(tNode: TNode) {
+  return (tNode.flags & TNodeFlags.hasClassInput) !== 0;
+}
+
+export function hasStyleInput(tNode: TNode) {
+  return (tNode.flags & TNodeFlags.hasStyleInput) !== 0;
+}
+
+export function forceClassesAsString(classes: string | {[key: string]: any} | null | undefined):
+    string {
+  if (classes && typeof classes !== 'string') {
+    classes = Object.keys(classes).join(' ');
+  }
+  return (classes as string) || '';
+}
+
+export function forceStylesAsString(styles: {[key: string]: any} | null | undefined): string {
+  let str = '';
+  if (styles) {
+    const props = Object.keys(styles);
+    for (let i = 0; i < props.length; i++) {
+      const prop = props[i];
+      str += (i ? ';' : '') + `${prop}:${styles[prop]}`;
+    }
+  }
+  return str;
 }
 
 export function addPlayerInternal(
@@ -187,16 +262,4 @@ export function allocPlayerContext(data: StylingContext): PlayerContext {
 
 export function throwInvalidRefError() {
   throw new Error('Only elements that exist in an Angular application can be used for animations');
-}
-
-export function hasStyling(attrs: TAttributes): boolean {
-  for (let i = 0; i < attrs.length; i++) {
-    const attr = attrs[i];
-    if (attr == AttributeMarker.Classes || attr == AttributeMarker.Styles) return true;
-  }
-  return false;
-}
-
-export function hasClassInput(tNode: TNode) {
-  return tNode.flags & TNodeFlags.hasClassInput ? true : false;
 }

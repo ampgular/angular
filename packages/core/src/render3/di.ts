@@ -18,11 +18,14 @@ import {NG_ELEMENT_ID} from './fields';
 import {DirectiveDef} from './interfaces/definition';
 import {NO_PARENT_INJECTOR, NodeInjectorFactory, PARENT_INJECTOR, RelativeInjectorLocation, RelativeInjectorLocationFlags, TNODE, isFactory} from './interfaces/injector';
 import {AttributeMarker, TContainerNode, TElementContainerNode, TElementNode, TNode, TNodeFlags, TNodeProviderIndexes, TNodeType} from './interfaces/node';
-import {DECLARATION_VIEW, HOST_NODE, INJECTOR, LView, TData, TVIEW, TView} from './interfaces/view';
+import {DECLARATION_VIEW, INJECTOR, LView, TData, TVIEW, TView, T_HOST} from './interfaces/view';
 import {assertNodeOfPossibleTypes} from './node_assert';
-import {unwrapOnChangesDirectiveWrapper} from './onchanges_util';
 import {getLView, getPreviousOrParentTNode, setTNodeAndViewData} from './state';
-import {findComponentView, getParentInjectorIndex, getParentInjectorView, hasParentInjector, isComponent, isComponentDef, renderStringify} from './util';
+import {isNameOnlyAttributeMarker} from './util/attrs_utils';
+import {getParentInjectorIndex, getParentInjectorView, hasParentInjector} from './util/injector_utils';
+import {renderStringify} from './util/misc_utils';
+import {findComponentView} from './util/view_traversal_utils';
+import {isComponent, isComponentDef} from './util/view_utils';
 
 
 
@@ -206,11 +209,11 @@ export function getParentInjectorLocation(tNode: TNode, view: LView): RelativeIn
   // For most cases, the parent injector index can be found on the host node (e.g. for component
   // or container), so this loop will be skipped, but we must keep the loop here to support
   // the rarer case of deeply nested <ng-template> tags or inline views.
-  let hostTNode = view[HOST_NODE];
+  let hostTNode = view[T_HOST];
   let viewOffset = 1;
   while (hostTNode && hostTNode.injectorIndex === -1) {
     view = view[DECLARATION_VIEW] !;
-    hostTNode = view ? view[HOST_NODE] : null;
+    hostTNode = view ? view[T_HOST] : null;
     viewOffset++;
   }
 
@@ -268,11 +271,45 @@ export function injectAttributeImpl(tNode: TNode, attrNameToInject: string): str
   ngDevMode && assertDefined(tNode, 'expecting tNode');
   const attrs = tNode.attrs;
   if (attrs) {
-    for (let i = 0; i < attrs.length; i = i + 2) {
-      const attrName = attrs[i];
-      if (attrName === AttributeMarker.SelectOnly) break;
-      if (attrName == attrNameToInject) {
+    const attrsLength = attrs.length;
+    let i = 0;
+    while (i < attrsLength) {
+      const value = attrs[i];
+
+      // If we hit a `Bindings` or `Template` marker then we are done.
+      if (isNameOnlyAttributeMarker(value)) break;
+
+      // Skip namespaced attributes
+      if (value === AttributeMarker.NamespaceURI) {
+        // we skip the next two values
+        // as namespaced attributes looks like
+        // [..., AttributeMarker.NamespaceURI, 'http://someuri.com/test', 'test:exist',
+        // 'existValue', ...]
+        i = i + 2;
+      } else if (typeof value === 'number') {
+        // Skip to the first value of the marked attribute.
+        i++;
+        if (value === AttributeMarker.Classes && attrNameToInject === 'class') {
+          let accumulatedClasses = '';
+          while (i < attrsLength && typeof attrs[i] === 'string') {
+            accumulatedClasses += ' ' + attrs[i++];
+          }
+          return accumulatedClasses.trim();
+        } else if (value === AttributeMarker.Styles && attrNameToInject === 'style') {
+          let accumulatedStyles = '';
+          while (i < attrsLength && typeof attrs[i] === 'string') {
+            accumulatedStyles += `${attrs[i++]}: ${attrs[i++]}; `;
+          }
+          return accumulatedStyles.trim();
+        } else {
+          while (i < attrsLength && typeof attrs[i] === 'string') {
+            i++;
+          }
+        }
+      } else if (value === attrNameToInject) {
         return attrs[i + 1] as string;
+      } else {
+        i = i + 2;
       }
     }
   }
@@ -333,7 +370,7 @@ export function getOrCreateInjectable<T>(
       let injectorIndex = getInjectorIndex(tNode, lView);
       let parentLocation: RelativeInjectorLocation = NO_PARENT_INJECTOR;
       let hostTElementNode: TNode|null =
-          flags & InjectFlags.Host ? findComponentView(lView)[HOST_NODE] : null;
+          flags & InjectFlags.Host ? findComponentView(lView)[T_HOST] : null;
 
       // If we should skip this injector, or if there is no injector on this node, start by
       // searching
@@ -393,10 +430,18 @@ export function getOrCreateInjectable<T>(
 
   if ((flags & (InjectFlags.Self | InjectFlags.Host)) === 0) {
     const moduleInjector = lView[INJECTOR];
-    if (moduleInjector) {
-      return moduleInjector.get(token, notFoundValue, flags & InjectFlags.Optional);
-    } else {
-      return injectRootLimpMode(token, notFoundValue, flags & InjectFlags.Optional);
+    // switch to `injectInjectorOnly` implementation for module injector, since module injector
+    // should not have access to Component/Directive DI scope (that may happen through
+    // `directiveInject` implementation)
+    const previousInjectImplementation = setInjectImplementation(undefined);
+    try {
+      if (moduleInjector) {
+        return moduleInjector.get(token, notFoundValue, flags & InjectFlags.Optional);
+      } else {
+        return injectRootLimpMode(token, notFoundValue, flags & InjectFlags.Optional);
+      }
+    } finally {
+      setInjectImplementation(previousInjectImplementation);
     }
   }
   if (flags & InjectFlags.Optional) {
@@ -513,18 +558,12 @@ export function getNodeInjectable(
     setTNodeAndViewData(tNode, lData);
     try {
       value = lData[index] = factory.factory(null, tData, lData, tNode);
-      const tView = lData[TVIEW];
-      if (value && factory.isProvider && value.ngOnDestroy) {
-        (tView.destroyHooks || (tView.destroyHooks = [])).push(index, value.ngOnDestroy);
-      }
     } finally {
       if (factory.injectImpl) setInjectImplementation(previousInjectImplementation);
       setIncludeViewProviders(previousIncludeViewProviders);
       factory.resolving = false;
       setTNodeAndViewData(savePreviousOrParentTNode, saveLView);
     }
-  } else {
-    value = unwrapOnChangesDirectiveWrapper(value);
   }
   return value;
 }

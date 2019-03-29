@@ -27,13 +27,13 @@ import {getDirectivesAtNodeIndex, getLContext, isComponentInstance} from '../../
 import {extractDirectiveDef, extractPipeDef} from '../../src/render3/definition';
 import {NG_ELEMENT_ID} from '../../src/render3/fields';
 import {ComponentTemplate, ComponentType, DirectiveDef, DirectiveType, ProvidersFeature, RenderFlags, defineComponent, defineDirective, renderComponent as _renderComponent, tick} from '../../src/render3/index';
-import {renderTemplate} from '../../src/render3/instructions';
-import {DirectiveDefList, DirectiveTypesOrFactory, PipeDef, PipeDefList, PipeTypesOrFactory} from '../../src/render3/interfaces/definition';
+import {renderTemplate} from '../../src/render3/instructions/all';
+import {DirectiveDefList, DirectiveTypesOrFactory, HostBindingsFunction, PipeDef, PipeDefList, PipeTypesOrFactory} from '../../src/render3/interfaces/definition';
 import {PlayerHandler} from '../../src/render3/interfaces/player';
 import {ProceduralRenderer3, RComment, RElement, RNode, RText, Renderer3, RendererFactory3, RendererStyleFlags3, domRendererFactory3} from '../../src/render3/interfaces/renderer';
 import {HEADER_OFFSET, LView} from '../../src/render3/interfaces/view';
 import {destroyLView} from '../../src/render3/node_manipulation';
-import {getRootView} from '../../src/render3/util';
+import {getRootView} from '../../src/render3/util/view_traversal_utils';
 import {Sanitizer} from '../../src/sanitization/security';
 
 import {getRendererFactory2} from './imported_renderer2';
@@ -180,7 +180,12 @@ export class ComponentFixture<T> extends BaseFixture {
   }
 
   destroy(): void {
-    this.containerElement.removeChild(this.hostElement);
+    // Skip removing the DOM element if it has already been removed (the view has already
+    // been destroyed).
+    if (this.hostElement.parentNode === this.containerElement) {
+      this.containerElement.removeChild(this.hostElement);
+    }
+
     destroyLView(getRootView(this.component));
   }
 }
@@ -309,7 +314,7 @@ export function createComponent(
     name: string, template: ComponentTemplate<any>, consts: number = 0, vars: number = 0,
     directives: DirectiveTypesOrFactory = [], pipes: PipeTypesOrFactory = [],
     viewQuery: ComponentTemplate<any>| null = null, providers: Provider[] = [],
-    viewProviders: Provider[] = []): ComponentType<any> {
+    viewProviders: Provider[] = [], hostBindings?: HostBindingsFunction<any>): ComponentType<any> {
   return class Component {
     value: any;
     static ngComponentDef = defineComponent({
@@ -320,7 +325,7 @@ export function createComponent(
       factory: () => new Component,
       template: template,
       viewQuery: viewQuery,
-      directives: directives,
+      directives: directives, hostBindings,
       pipes: pipes,
       features: (providers.length > 0 || viewProviders.length > 0)?
       [ProvidersFeature(providers || [], viewProviders || [])]: []
@@ -394,7 +399,7 @@ class MockRenderer implements ProceduralRenderer3 {
   destroy(): void {}
   createComment(value: string): RComment { return document.createComment(value); }
   createElement(name: string, namespace?: string|null): RElement {
-    return document.createElement(name);
+    return namespace ? document.createElementNS(namespace, name) : document.createElement(name);
   }
   createText(value: string): RText { return document.createTextNode(value); }
   appendChild(parent: RElement, newChild: RNode): void { parent.appendChild(newChild); }

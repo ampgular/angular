@@ -8,7 +8,7 @@
 
 import {SANITIZER} from '../render3/interfaces/view';
 import {getLView} from '../render3/state';
-import {renderStringify} from '../render3/util';
+import {renderStringify} from '../render3/util/misc_utils';
 
 import {BypassType, allowSanitizationBypass} from './bypass';
 import {_sanitizeHtml as _sanitizeHtml} from './html_sanitizer';
@@ -172,14 +172,13 @@ export function sanitizeUrlOrResourceUrl(unsafeUrl: any, tag: string, prop: stri
 export const defaultStyleSanitizer = (function(prop: string, value?: string): string | boolean {
   if (value === undefined) {
     return prop === 'background-image' || prop === 'background' || prop === 'border-image' ||
-        prop === 'filter' || prop === 'filter' || prop === 'list-style' ||
-        prop === 'list-style-image';
+        prop === 'filter' || prop === 'list-style' || prop === 'list-style-image';
   }
 
   return sanitizeStyle(value);
 } as StyleSanitizeFn);
 
-export function validateProperty(name: string) {
+export function validateAgainstEventProperties(name: string) {
   if (name.toLowerCase().startsWith('on')) {
     const msg = `Binding to event property '${name}' is disallowed for security reasons, ` +
         `please use (${name.slice(2)})=...` +
@@ -189,7 +188,7 @@ export function validateProperty(name: string) {
   }
 }
 
-export function validateAttribute(name: string) {
+export function validateAgainstEventAttributes(name: string) {
   if (name.toLowerCase().startsWith('on')) {
     const msg = `Binding to event attribute '${name}' is disallowed for security reasons, ` +
         `please use (${name.slice(2)})=...`;

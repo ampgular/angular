@@ -10,18 +10,9 @@ import {Type} from '../../interface/type';
 import {fillProperties} from '../../util/property';
 import {EMPTY_ARRAY, EMPTY_OBJ} from '../empty';
 import {ComponentDef, DirectiveDef, DirectiveDefFeature, RenderFlags} from '../interfaces/definition';
+import {isComponentDef} from '../util/view_utils';
 
-
-
-/**
- * Determines if a definition is a {@link ComponentDef} or a {@link DirectiveDef}
- * @param definition The definition to examine
- */
-function isComponentDef<T>(definition: ComponentDef<T>| DirectiveDef<T>):
-    definition is ComponentDef<T> {
-  const def = definition as ComponentDef<T>;
-  return typeof def.template === 'function';
-}
+import {NgOnChangesFeature} from './ng_onchanges_feature';
 
 function getSuperType(type: Type<any>): Type<any>&
     {ngComponentDef?: ComponentDef<any>, ngDirectiveDef?: DirectiveDef<any>} {
@@ -60,6 +51,7 @@ export function InheritDefinitionFeature(definition: DirectiveDef<any>| Componen
     }
 
     if (baseDef) {
+      // Merge inputs and outputs
       fillProperties(definition.inputs, baseDef.inputs);
       fillProperties(definition.declaredInputs, baseDef.declaredInputs);
       fillProperties(definition.outputs, baseDef.outputs);
@@ -81,18 +73,17 @@ export function InheritDefinitionFeature(definition: DirectiveDef<any>| Componen
       }
 
       // Merge View Queries
-      if (isComponentDef(definition) && isComponentDef(superDef)) {
-        const prevViewQuery = definition.viewQuery;
-        const superViewQuery = superDef.viewQuery;
-        if (superViewQuery) {
-          if (prevViewQuery) {
-            definition.viewQuery = <T>(rf: RenderFlags, ctx: T): void => {
-              superViewQuery(rf, ctx);
-              prevViewQuery(rf, ctx);
-            };
-          } else {
-            definition.viewQuery = superViewQuery;
-          }
+      const prevViewQuery = definition.viewQuery;
+      const superViewQuery = superDef.viewQuery;
+
+      if (superViewQuery) {
+        if (prevViewQuery) {
+          definition.viewQuery = <T>(rf: RenderFlags, ctx: T): void => {
+            superViewQuery(rf, ctx);
+            prevViewQuery(rf, ctx);
+          };
+        } else {
+          definition.viewQuery = superViewQuery;
         }
       }
 
@@ -101,26 +92,12 @@ export function InheritDefinitionFeature(definition: DirectiveDef<any>| Componen
       const superContentQueries = superDef.contentQueries;
       if (superContentQueries) {
         if (prevContentQueries) {
-          definition.contentQueries = (dirIndex: number) => {
-            superContentQueries(dirIndex);
-            prevContentQueries(dirIndex);
+          definition.contentQueries = <T>(rf: RenderFlags, ctx: T, directiveIndex: number) => {
+            superContentQueries(rf, ctx, directiveIndex);
+            prevContentQueries(rf, ctx, directiveIndex);
           };
         } else {
           definition.contentQueries = superContentQueries;
-        }
-      }
-
-      // Merge Content Queries Refresh
-      const prevContentQueriesRefresh = definition.contentQueriesRefresh;
-      const superContentQueriesRefresh = superDef.contentQueriesRefresh;
-      if (superContentQueriesRefresh) {
-        if (prevContentQueriesRefresh) {
-          definition.contentQueriesRefresh = (directiveIndex: number, queryIndex: number) => {
-            superContentQueriesRefresh(directiveIndex, queryIndex);
-            prevContentQueriesRefresh(directiveIndex, queryIndex);
-          };
-        } else {
-          definition.contentQueriesRefresh = superContentQueriesRefresh;
         }
       }
 
@@ -139,7 +116,6 @@ export function InheritDefinitionFeature(definition: DirectiveDef<any>| Componen
       definition.doCheck = definition.doCheck || superDef.doCheck;
       definition.onDestroy = definition.onDestroy || superDef.onDestroy;
       definition.onInit = definition.onInit || superDef.onInit;
-      definition.onChanges = definition.onChanges || superDef.onChanges;
 
       // Run parent features
       const features = superDef.features;
@@ -150,8 +126,6 @@ export function InheritDefinitionFeature(definition: DirectiveDef<any>| Componen
           }
         }
       }
-
-      break;
     } else {
       // Even if we don't have a definition, check the type for the hooks and use those if need be
       const superPrototype = superType.prototype;
@@ -166,7 +140,10 @@ export function InheritDefinitionFeature(definition: DirectiveDef<any>| Componen
         definition.doCheck = definition.doCheck || superPrototype.ngDoCheck;
         definition.onDestroy = definition.onDestroy || superPrototype.ngOnDestroy;
         definition.onInit = definition.onInit || superPrototype.ngOnInit;
-        definition.onChanges = definition.onChanges || superPrototype.ngOnChanges;
+
+        if (superPrototype.ngOnChanges) {
+          NgOnChangesFeature()(definition);
+        }
       }
     }
 

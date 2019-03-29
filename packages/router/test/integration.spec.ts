@@ -12,7 +12,7 @@ import {ChangeDetectionStrategy, Component, Injectable, NgModule, NgModuleFactor
 import {ComponentFixture, TestBed, fakeAsync, inject, tick} from '@angular/core/testing';
 import {By} from '@angular/platform-browser/src/dom/debug/by';
 import {expect} from '@angular/platform-browser/testing/src/matchers';
-import {ActivatedRoute, ActivatedRouteSnapshot, ActivationEnd, ActivationStart, CanActivate, CanDeactivate, ChildActivationEnd, ChildActivationStart, DetachedRouteHandle, Event, GuardsCheckEnd, GuardsCheckStart, Navigation, NavigationCancel, NavigationEnd, NavigationError, NavigationStart, PRIMARY_OUTLET, ParamMap, Params, PreloadAllModules, PreloadingStrategy, Resolve, ResolveEnd, ResolveStart, RouteConfigLoadEnd, RouteConfigLoadStart, RouteReuseStrategy, Router, RouterEvent, RouterModule, RouterPreloader, RouterStateSnapshot, RoutesRecognized, RunGuardsAndResolvers, UrlHandlingStrategy, UrlSegmentGroup, UrlSerializer, UrlTree} from '@angular/router';
+import {ActivatedRoute, ActivatedRouteSnapshot, ActivationEnd, ActivationStart, CanActivate, CanDeactivate, ChildActivationEnd, ChildActivationStart, DefaultUrlSerializer, DetachedRouteHandle, Event, GuardsCheckEnd, GuardsCheckStart, Navigation, NavigationCancel, NavigationEnd, NavigationError, NavigationStart, PRIMARY_OUTLET, ParamMap, Params, PreloadAllModules, PreloadingStrategy, Resolve, ResolveEnd, ResolveStart, RouteConfigLoadEnd, RouteConfigLoadStart, RouteReuseStrategy, Router, RouterEvent, RouterModule, RouterPreloader, RouterStateSnapshot, RoutesRecognized, RunGuardsAndResolvers, UrlHandlingStrategy, UrlSegmentGroup, UrlSerializer, UrlTree} from '@angular/router';
 import {Observable, Observer, Subscription, of } from 'rxjs';
 import {filter, first, map, tap} from 'rxjs/operators';
 
@@ -571,64 +571,131 @@ describe('Integration', () => {
        expect(fixture.nativeElement).toHaveText('team 33 [ , right:  ]');
      })));
 
-  it('should eagerly update the URL with urlUpdateStrategy="eagar"',
+  it('should navigate after navigation with skipLocationChange',
      fakeAsync(inject([Router, Location], (router: Router, location: Location) => {
-       const fixture = TestBed.createComponent(RootCmp);
+       const fixture = TestBed.createComponent(RootCmpWithNamedOutlet);
        advance(fixture);
 
-       router.resetConfig([{path: 'team/:id', component: TeamCmp}]);
+       router.resetConfig([{path: 'show', outlet: 'main', component: SimpleCmp}]);
 
-       router.navigateByUrl('/team/22');
+       router.navigate([{outlets: {main: 'show'}}], {skipLocationChange: true});
        advance(fixture);
-       expect(location.path()).toEqual('/team/22');
+       expect(location.path()).toEqual('');
 
-       expect(fixture.nativeElement).toHaveText('team 22 [ , right:  ]');
+       expect(fixture.nativeElement).toHaveText('main [simple]');
 
-       router.urlUpdateStrategy = 'eager';
-       (router as any).hooks.beforePreactivation = () => {
-         expect(location.path()).toEqual('/team/33');
+       router.navigate([{outlets: {main: null}}], {skipLocationChange: true});
+       advance(fixture);
+
+       expect(location.path()).toEqual('');
+
+       expect(fixture.nativeElement).toHaveText('main []');
+     })));
+
+  describe('"eager" urlUpdateStrategy', () => {
+    beforeEach(() => {
+      const serializer = new DefaultUrlSerializer();
+      TestBed.configureTestingModule({
+        providers: [{
+          provide: 'authGuardFail',
+          useValue: (a: any, b: any) => {
+            return new Promise(res => { setTimeout(() => res(serializer.parse('/login')), 1); });
+          }
+        }]
+      });
+
+    });
+
+
+    it('should eagerly update the URL with urlUpdateStrategy="eagar"',
+       fakeAsync(inject([Router, Location], (router: Router, location: Location) => {
+         const fixture = TestBed.createComponent(RootCmp);
+         advance(fixture);
+
+         router.resetConfig([{path: 'team/:id', component: TeamCmp}]);
+
+         router.navigateByUrl('/team/22');
+         advance(fixture);
+         expect(location.path()).toEqual('/team/22');
+
          expect(fixture.nativeElement).toHaveText('team 22 [ , right:  ]');
-         return of (null);
-       };
-       router.navigateByUrl('/team/33');
 
-       advance(fixture);
-       expect(fixture.nativeElement).toHaveText('team 33 [ , right:  ]');
-     })));
+         router.urlUpdateStrategy = 'eager';
+         (router as any).hooks.beforePreactivation = () => {
+           expect(location.path()).toEqual('/team/33');
+           expect(fixture.nativeElement).toHaveText('team 22 [ , right:  ]');
+           return of (null);
+         };
+         router.navigateByUrl('/team/33');
 
-  it('should eagerly update URL after redirects are applied with urlUpdateStrategy="eagar"',
-     fakeAsync(inject([Router, Location], (router: Router, location: Location) => {
-       const fixture = TestBed.createComponent(RootCmp);
-       advance(fixture);
+         advance(fixture);
+         expect(fixture.nativeElement).toHaveText('team 33 [ , right:  ]');
+       })));
+    it('should eagerly update the URL with urlUpdateStrategy="eagar"',
+       fakeAsync(inject([Router, Location], (router: Router, location: Location) => {
+         const fixture = TestBed.createComponent(RootCmp);
+         advance(fixture);
 
-       router.resetConfig([{path: 'team/:id', component: TeamCmp}]);
+         router.urlUpdateStrategy = 'eager';
 
-       router.navigateByUrl('/team/22');
-       advance(fixture);
-       expect(location.path()).toEqual('/team/22');
+         router.resetConfig([
+           {path: 'team/:id', component: SimpleCmp, canActivate: ['authGuardFail']},
+           {path: 'login', component: AbsoluteSimpleLinkCmp}
+         ]);
 
-       expect(fixture.nativeElement).toHaveText('team 22 [ , right:  ]');
+         router.navigateByUrl('/team/22');
+         advance(fixture);
+         expect(location.path()).toEqual('/team/22');
 
-       router.urlUpdateStrategy = 'eager';
+         // Redirects to /login
+         advance(fixture, 1);
+         expect(location.path()).toEqual('/login');
 
-       let urlAtNavStart = '';
-       let urlAtRoutesRecognized = '';
-       router.events.subscribe(e => {
-         if (e instanceof NavigationStart) {
-           urlAtNavStart = location.path();
-         }
-         if (e instanceof RoutesRecognized) {
-           urlAtRoutesRecognized = location.path();
-         }
-       });
+         // Perform the same logic again, and it should produce the same result
+         router.navigateByUrl('/team/22');
+         advance(fixture);
+         expect(location.path()).toEqual('/team/22');
 
-       router.navigateByUrl('/team/33');
+         // Redirects to /login
+         advance(fixture, 1);
+         expect(location.path()).toEqual('/login');
+       })));
 
-       advance(fixture);
-       expect(urlAtNavStart).toBe('/team/22');
-       expect(urlAtRoutesRecognized).toBe('/team/33');
-       expect(fixture.nativeElement).toHaveText('team 33 [ , right:  ]');
-     })));
+    it('should eagerly update URL after redirects are applied with urlUpdateStrategy="eagar"',
+       fakeAsync(inject([Router, Location], (router: Router, location: Location) => {
+         const fixture = TestBed.createComponent(RootCmp);
+         advance(fixture);
+
+         router.resetConfig([{path: 'team/:id', component: TeamCmp}]);
+
+         router.navigateByUrl('/team/22');
+         advance(fixture);
+         expect(location.path()).toEqual('/team/22');
+
+         expect(fixture.nativeElement).toHaveText('team 22 [ , right:  ]');
+
+         router.urlUpdateStrategy = 'eager';
+
+         let urlAtNavStart = '';
+         let urlAtRoutesRecognized = '';
+         router.events.subscribe(e => {
+           if (e instanceof NavigationStart) {
+             urlAtNavStart = location.path();
+           }
+           if (e instanceof RoutesRecognized) {
+             urlAtRoutesRecognized = location.path();
+           }
+         });
+
+         router.navigateByUrl('/team/33');
+
+         advance(fixture);
+         expect(urlAtNavStart).toBe('/team/22');
+         expect(urlAtRoutesRecognized).toBe('/team/33');
+         expect(fixture.nativeElement).toHaveText('team 33 [ , right:  ]');
+       })));
+
+  });
 
   it('should navigate back and forward',
      fakeAsync(inject([Router, Location], (router: Router, location: Location) => {
@@ -1872,6 +1939,25 @@ describe('Integration', () => {
          expect(history[history.length - 1].state)
              .toEqual({foo: 'bar', navigationId: history.length});
        })));
+
+    it('should set href on area elements', fakeAsync(() => {
+         @Component({
+           selector: 'someRoot',
+           template: `<router-outlet></router-outlet><map><area routerLink="/home" /></map>`
+         })
+         class RootCmpWithArea {
+         }
+
+         TestBed.configureTestingModule({declarations: [RootCmpWithArea]});
+         const router: Router = TestBed.get(Router);
+
+         const fixture = createRoot(router, RootCmpWithArea);
+
+         router.resetConfig([{path: 'home', component: SimpleCmp}]);
+
+         const native = fixture.nativeElement.querySelector('area');
+         expect(native.getAttribute('href')).toEqual('/home');
+       }));
   });
 
   describe('redirects', () => {
@@ -2170,11 +2256,18 @@ describe('Integration', () => {
 
       describe('should redirect when guard returns UrlTree', () => {
         beforeEach(() => TestBed.configureTestingModule({
-          providers: [{
-            provide: 'returnUrlTree',
-            useFactory: (router: Router) => () => { return router.parseUrl('/redirected'); },
-            deps: [Router]
-          }]
+          providers: [
+            {
+              provide: 'returnUrlTree',
+              useFactory: (router: Router) => () => { return router.parseUrl('/redirected'); },
+              deps: [Router]
+            },
+            {
+              provide: 'returnRootUrlTree',
+              useFactory: (router: Router) => () => { return router.parseUrl('/'); },
+              deps: [Router]
+            }
+          ]
         }));
 
         it('works', fakeAsync(inject([Router, Location], (router: Router, location: Location) => {
@@ -2217,6 +2310,49 @@ describe('Integration', () => {
                [ActivationEnd, undefined],
                [ChildActivationEnd, undefined],
                [NavigationEnd, '/redirected'],
+             ]);
+           })));
+
+        it('works with root url',
+           fakeAsync(inject([Router, Location], (router: Router, location: Location) => {
+             const recordedEvents: any[] = [];
+             let cancelEvent: NavigationCancel = null !;
+             router.events.forEach((e: any) => {
+               recordedEvents.push(e);
+               if (e instanceof NavigationCancel) cancelEvent = e;
+             });
+             router.resetConfig([
+               {path: '', component: SimpleCmp},
+               {path: 'one', component: RouteCmp, canActivate: ['returnRootUrlTree']}
+             ]);
+
+             const fixture = TestBed.createComponent(RootCmp);
+             router.navigateByUrl('/one');
+
+             advance(fixture);
+
+             expect(location.path()).toEqual('/');
+             expect(fixture.nativeElement).toHaveText('simple');
+             expect(cancelEvent && cancelEvent.reason)
+                 .toBe('NavigationCancelingError: Redirecting to "/"');
+             expectEvents(recordedEvents, [
+               [NavigationStart, '/one'],
+               [RoutesRecognized, '/one'],
+               [GuardsCheckStart, '/one'],
+               [ChildActivationStart, undefined],
+               [ActivationStart, undefined],
+               [NavigationCancel, '/one'],
+               [NavigationStart, '/'],
+               [RoutesRecognized, '/'],
+               [GuardsCheckStart, '/'],
+               [ChildActivationStart, undefined],
+               [ActivationStart, undefined],
+               [GuardsCheckEnd, '/'],
+               [ResolveStart, '/'],
+               [ResolveEnd, '/'],
+               [ActivationEnd, undefined],
+               [ChildActivationEnd, undefined],
+               [NavigationEnd, '/'],
              ]);
            })));
       });
@@ -3442,7 +3578,6 @@ describe('Integration', () => {
 
          TestBed.configureTestingModule({declarations: [RootCmpWithLink]});
          const router: Router = TestBed.get(Router);
-         const loc: any = TestBed.get(Location);
 
          const f = TestBed.createComponent(RootCmpWithLink);
          advance(f);
@@ -4656,6 +4791,10 @@ class DummyLinkCmp {
   }
 }
 
+@Component({selector: 'link-cmp', template: `<a [routerLink]="['/simple']">link</a>`})
+class AbsoluteSimpleLinkCmp {
+}
+
 @Component({selector: 'link-cmp', template: `<a [routerLink]="['../simple']">link</a>`})
 class RelativeLinkCmp {
 }
@@ -4829,6 +4968,10 @@ class RootCmpWithOnInit {
 class RootCmpWithTwoOutlets {
 }
 
+@Component({selector: 'root-cmp', template: `main [<router-outlet name="main"></router-outlet>]`})
+class RootCmpWithNamedOutlet {
+}
+
 @Component({selector: 'throwing-cmp', template: ''})
 class ThrowingCmp {
   constructor() { throw new Error('Throwing Cmp'); }
@@ -4836,8 +4979,8 @@ class ThrowingCmp {
 
 
 
-function advance(fixture: ComponentFixture<any>): void {
-  tick();
+function advance(fixture: ComponentFixture<any>, millis?: number): void {
+  tick(millis);
   fixture.detectChanges();
 }
 
@@ -4865,6 +5008,7 @@ class LazyComponent {
     StringLinkCmp,
     DummyLinkCmp,
     AbsoluteLinkCmp,
+    AbsoluteSimpleLinkCmp,
     RelativeLinkCmp,
     DummyLinkWithParentCmp,
     LinkWithQueryParamsAndFragment,
@@ -4879,6 +5023,7 @@ class LazyComponent {
     RootCmp,
     RelativeLinkInIfCmp,
     RootCmpWithTwoOutlets,
+    RootCmpWithNamedOutlet,
     EmptyQueryParamsCmp,
     ThrowingCmp
   ],
@@ -4893,6 +5038,7 @@ class LazyComponent {
     StringLinkCmp,
     DummyLinkCmp,
     AbsoluteLinkCmp,
+    AbsoluteSimpleLinkCmp,
     RelativeLinkCmp,
     DummyLinkWithParentCmp,
     LinkWithQueryParamsAndFragment,
@@ -4908,6 +5054,7 @@ class LazyComponent {
     RootCmpWithOnInit,
     RelativeLinkInIfCmp,
     RootCmpWithTwoOutlets,
+    RootCmpWithNamedOutlet,
     EmptyQueryParamsCmp,
     ThrowingCmp
   ],
@@ -4923,6 +5070,7 @@ class LazyComponent {
     StringLinkCmp,
     DummyLinkCmp,
     AbsoluteLinkCmp,
+    AbsoluteSimpleLinkCmp,
     RelativeLinkCmp,
     DummyLinkWithParentCmp,
     LinkWithQueryParamsAndFragment,
@@ -4938,6 +5086,7 @@ class LazyComponent {
     RootCmpWithOnInit,
     RelativeLinkInIfCmp,
     RootCmpWithTwoOutlets,
+    RootCmpWithNamedOutlet,
     EmptyQueryParamsCmp,
     ThrowingCmp
   ]

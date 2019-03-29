@@ -44,6 +44,7 @@ describe('compiler compliance: bindings', () => {
           $i0$.ɵelementEnd();
         }
         if (rf & 2) {
+          $r3$.ɵselect(1);
           $i0$.ɵtextBinding(1, $i0$.ɵinterpolation1("Hello ", $ctx$.name, ""));
         }
       }`;
@@ -73,13 +74,14 @@ describe('compiler compliance: bindings', () => {
       };
 
       const template = `
-      const $e0_attrs$ = [${AttributeMarker.SelectOnly}, "title"];
+      const $e0_attrs$ = [${AttributeMarker.Bindings}, "title"];
       …
       template:function MyComponent_Template(rf, $ctx$){
         if (rf & 1) {
           $i0$.ɵelement(0, "a", $e0_attrs$);
         }
         if (rf & 2) {
+          $i0$.ɵselect(0);
           $i0$.ɵelementProperty(0, "title", $i0$.ɵbind($ctx$.title));
         }
       }`;
@@ -107,13 +109,14 @@ describe('compiler compliance: bindings', () => {
       };
 
       const template = `
-      const $e0_attrs$ = [${AttributeMarker.SelectOnly}, "title"];
+      const $e0_attrs$ = [${AttributeMarker.Bindings}, "title"];
       …
       template:function MyComponent_Template(rf, $ctx$){
         if (rf & 1) {
           $i0$.ɵelement(0, "a", $e0_attrs$);
         }
         if (rf & 2) {
+          $i0$.ɵselect(0);
           $i0$.ɵelementProperty(0, "title", $i0$.ɵinterpolation1("Hello ", $ctx$.name, ""));
         }
       }`;
@@ -137,6 +140,49 @@ describe('compiler compliance: bindings', () => {
       const result = compile(files, angularFiles);
       expect(result.source).not.toContain('i0.ɵelementProperty');
     });
+
+    it('should not remap property names whose names do not correspond to their attribute names',
+       () => {
+         const files = {
+           app: {
+             'spec.ts': `
+              import {Component, NgModule} from '@angular/core';
+
+              @Component({
+                selector: 'my-component',
+                template: \`
+                  <label [for]="forValue"></label>\`
+              })
+              export class MyComponent {
+                forValue = 'some-input';
+              }
+
+              @NgModule({declarations: [MyComponent]})
+              export class MyModule {}
+          `
+           }
+         };
+
+         const template = `
+      const $c0$ = [${AttributeMarker.Bindings}, "for"];
+
+      // ...
+
+      function MyComponent_Template(rf, ctx) {
+        if (rf & 1) {
+            $i0$.ɵelement(0, "label", _c0);
+        }
+        if (rf & 2) {
+            $i0$.ɵselect(0);
+            $i0$.ɵelementProperty(0, "for", $i0$.ɵbind(ctx.forValue));
+        }
+      }`;
+
+         const result = compile(files, angularFiles);
+
+         expectEmit(result.source, template, 'Incorrect template');
+       });
+
   });
 
   describe('host bindings', () => {
@@ -304,7 +350,7 @@ describe('compiler compliance: bindings', () => {
           factory: function HostAttributeDir_Factory(t) { return new (t || HostAttributeDir)(); },
           hostBindings: function HostAttributeDir_HostBindings(rf, ctx, elIndex) {
             if (rf & 1) {
-              $r3$.ɵelementHostAttrs(ctx, $c0$);
+              $r3$.ɵelementHostAttrs($c0$);
             }
           }
         });
@@ -362,7 +408,7 @@ describe('compiler compliance: bindings', () => {
           factory: function HostAttributeComp_Factory(t) { return new (t || HostAttributeComp)(); },
           hostBindings: function HostAttributeComp_HostBindings(rf, ctx, elIndex) {
             if (rf & 1) {
-              $r3$.ɵelementHostAttrs(ctx, $c0$);
+              $r3$.ɵelementHostAttrs($c0$);
               …
             }
             …
@@ -374,7 +420,7 @@ describe('compiler compliance: bindings', () => {
           factory: function HostAttributeDir_Factory(t) { return new (t || HostAttributeDir)(); },
           hostBindings: function HostAttributeDir_HostBindings(rf, ctx, elIndex) {
             if (rf & 1) {
-              $r3$.ɵelementHostAttrs(ctx, $c1$);
+              $r3$.ɵelementHostAttrs($c1$);
               …
             }
             …
@@ -431,6 +477,7 @@ describe('compiler compliance: bindings', () => {
           }
           if (rf & 2) {
             const $_r0$ = $i0$.ɵreference(1);
+            $r3$.ɵselect(4);
             $i0$.ɵtextBinding(4, $i0$.ɵinterpolation1(" ", $_r0$.id, " "));
           }
         }

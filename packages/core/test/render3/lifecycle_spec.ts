@@ -7,9 +7,9 @@
  */
 
 import {ComponentFactoryResolver, OnDestroy, SimpleChange, SimpleChanges, ViewContainerRef} from '../../src/core';
-import {AttributeMarker, ComponentTemplate, LifecycleHooksFeature, NO_CHANGE, defineComponent, defineDirective, injectComponentFactoryResolver} from '../../src/render3/index';
+import {AttributeMarker, ComponentTemplate, LifecycleHooksFeature, NO_CHANGE, NgOnChangesFeature, defineComponent, defineDirective, injectComponentFactoryResolver} from '../../src/render3/index';
 
-import {bind, container, containerRefreshEnd, containerRefreshStart, directiveInject, element, elementEnd, elementProperty, elementStart, embeddedViewEnd, embeddedViewStart, listener, markDirty, projection, projectionDef, store, template, text} from '../../src/render3/instructions';
+import {bind, container, containerRefreshEnd, containerRefreshStart, directiveInject, element, elementEnd, elementProperty, elementStart, embeddedViewEnd, embeddedViewStart, select, listener, markDirty, projection, projectionDef, store, template, text} from '../../src/render3/instructions/all';
 import {RenderFlags} from '../../src/render3/interfaces/definition';
 
 import {NgIf} from './common_with_def';
@@ -138,6 +138,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(1);
           elementProperty(1, 'val', 2);
         }
       }, 2, 0, directives);
@@ -196,7 +197,7 @@ describe('lifecycles', () => {
       /** <comp *ngIf="showing"></comp> */
       const App = createComponent('app', function(rf: RenderFlags, ctx: any) {
         if (rf & RenderFlags.Create) {
-          template(0, IfTemplate, 1, 0, 'comp', ['ngIf', '']);
+          template(0, IfTemplate, 1, 0, 'comp', [AttributeMarker.Template, 'ngIf']);
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'ngIf', bind(ctx.showing));
@@ -288,8 +289,11 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(1);
           elementProperty(1, 'val', 1);
+          select(2);
           elementProperty(2, 'val', 2);
+          select(3);
           elementProperty(3, 'val', 2);
         }
       }, 4, 0, directives);
@@ -344,6 +348,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(2);
           elementProperty(2, 'val', 5);
           containerRefreshStart(1);
           {
@@ -384,6 +389,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(2);
           elementProperty(2, 'val', 5);
           containerRefreshStart(1);
           {
@@ -442,7 +448,8 @@ describe('lifecycles', () => {
           factory: () => new Component(), template,
           consts: consts,
           vars: vars,
-          directives: directives
+          directives: directives,
+          inputs: {val: 'val'}
         });
       };
     }
@@ -621,6 +628,7 @@ describe('lifecycles', () => {
       }
       if (rf & RenderFlags.Update) {
         elementProperty(0, 'val', 1);
+        select(3);
         elementProperty(3, 'val', 4);
         containerRefreshStart(2);
         {
@@ -744,6 +752,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(2);
           elementProperty(2, 'val', 2);
         }
       }, 4, 0, directives);
@@ -812,8 +821,11 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(1);
           elementProperty(1, 'val', 1);
+          select(3);
           elementProperty(3, 'val', 2);
+          select(4);
           elementProperty(4, 'val', 2);
         }
       }, 6, 0, directives);
@@ -842,6 +854,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(3);
           elementProperty(3, 'val', 4);
           containerRefreshStart(2);
           {
@@ -1089,6 +1102,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(1);
           elementProperty(1, 'val', 2);
         }
       }, 2, 0, defs);
@@ -1136,8 +1150,11 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(1);
           elementProperty(1, 'val', 1);
+          select(2);
           elementProperty(2, 'val', 2);
+          select(3);
           elementProperty(3, 'val', 2);
         }
       }, 4, 0, defs);
@@ -1160,6 +1177,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', bind(ctx.val));
+          select(1);
           elementProperty(1, 'val', bind(ctx.val));
         }
       }, 2, 2, [Comp, ProjectedComp]);
@@ -1175,6 +1193,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(1);
           elementProperty(1, 'val', 2);
         }
       }, 2, 0, [ParentComp]);
@@ -1199,6 +1218,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(2);
           elementProperty(2, 'val', 4);
           containerRefreshStart(1);
           {
@@ -1238,6 +1258,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(2);
           elementProperty(2, 'val', 4);
           containerRefreshStart(1);
           {
@@ -1323,6 +1344,7 @@ describe('lifecycles', () => {
           }
           if (rf & RenderFlags.Update) {
             elementProperty(0, 'val', 1);
+            select(2);
             elementProperty(2, 'val', 4);
             containerRefreshStart(1);
             {
@@ -1484,6 +1506,7 @@ describe('lifecycles', () => {
               }
               if (rf1 & RenderFlags.Update) {
                 elementProperty(0, 'val', bind('1'));
+                select(1);
                 elementProperty(1, 'val', bind('2'));
               }
               embeddedViewEnd();
@@ -1600,8 +1623,11 @@ describe('lifecycles', () => {
               }
               if (rf1 & RenderFlags.Update) {
                 elementProperty(0, 'val', 1);
+                select(1);
                 elementProperty(1, 'val', 1);
+                select(2);
                 elementProperty(2, 'val', 2);
+                select(3);
                 elementProperty(3, 'val', 2);
               }
               embeddedViewEnd();
@@ -1646,6 +1672,7 @@ describe('lifecycles', () => {
               }
               if (rf1 & RenderFlags.Update) {
                 elementProperty(0, 'val', bind('1'));
+                select(2);
                 elementProperty(2, 'val', bind('3'));
                 containerRefreshStart(1);
                 {
@@ -1739,6 +1766,7 @@ describe('lifecycles', () => {
               }
               if (rf1 & RenderFlags.Update) {
                 elementProperty(0, 'val', bind('1'));
+                select(2);
                 elementProperty(2, 'val', bind('5'));
                 containerRefreshStart(1);
                 {
@@ -2006,7 +2034,8 @@ describe('lifecycles', () => {
           consts: consts,
           vars: vars,
           inputs: {a: 'val1', b: ['publicVal2', 'val2']}, template,
-          directives: directives
+          directives: directives,
+          features: [NgOnChangesFeature()],
         });
       };
     }
@@ -2024,7 +2053,8 @@ describe('lifecycles', () => {
         type: Directive,
         selectors: [['', 'dir', '']],
         factory: () => new Directive(),
-        inputs: {a: 'val1', b: ['publicVal2', 'val2']}
+        inputs: {a: 'val1', b: ['publicVal2', 'val2']},
+        features: [NgOnChangesFeature()],
       });
     }
 
@@ -2130,6 +2160,7 @@ describe('lifecycles', () => {
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val1', bind(1));
           elementProperty(0, 'publicVal2', bind(1));
+          select(1);
           elementProperty(1, 'val1', bind(2));
           elementProperty(1, 'publicVal2', bind(2));
         }
@@ -2267,6 +2298,7 @@ describe('lifecycles', () => {
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val1', bind(1));
           elementProperty(0, 'publicVal2', bind(1));
+          select(1);
           elementProperty(1, 'val1', bind(2));
           elementProperty(1, 'publicVal2', bind(2));
         }
@@ -2314,10 +2346,13 @@ describe('lifecycles', () => {
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val1', bind(1));
           elementProperty(0, 'publicVal2', bind(1));
+          select(1);
           elementProperty(1, 'val1', bind(2));
           elementProperty(1, 'publicVal2', bind(2));
+          select(2);
           elementProperty(2, 'val1', bind(3));
           elementProperty(2, 'publicVal2', bind(3));
+          select(3);
           elementProperty(3, 'val1', bind(4));
           elementProperty(3, 'publicVal2', bind(4));
         }
@@ -2448,6 +2483,7 @@ describe('lifecycles', () => {
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val1', bind(1));
           elementProperty(0, 'publicVal2', bind(1));
+          select(2);
           elementProperty(2, 'val1', bind(5));
           elementProperty(2, 'publicVal2', bind(5));
           containerRefreshStart(1);
@@ -2534,6 +2570,7 @@ describe('lifecycles', () => {
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val1', bind(1));
           elementProperty(0, 'publicVal2', bind(1));
+          select(2);
           elementProperty(2, 'val1', bind(5));
           elementProperty(2, 'publicVal2', bind(5));
           containerRefreshStart(1);
@@ -2662,10 +2699,10 @@ describe('lifecycles', () => {
               element(0, 'div');
             }
             if (rf & RenderFlags.Update) {
-              elementProperty(0, 'data-a', bind(ctx.a));
+              elementProperty(0, 'id', bind(ctx.a));
             }
           },
-          selectors: [['mycomp']],
+          selectors: [['my-comp']],
           inputs: {
             value: 'value',
           },
@@ -2680,7 +2717,7 @@ describe('lifecycles', () => {
 
       const App = createComponent('app', function(rf: RenderFlags, ctx: any) {
         if (rf & RenderFlags.Create) {
-          element(0, 'mycomp');
+          element(0, 'my-comp');
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'value', bind(1));
@@ -2728,7 +2765,8 @@ describe('lifecycles', () => {
           consts: consts,
           vars: vars,
           inputs: {val: 'val'}, template,
-          directives: directives
+          directives: directives,
+          features: [NgOnChangesFeature()],
         });
       };
     }
@@ -2752,6 +2790,7 @@ describe('lifecycles', () => {
         // even though the *value* itself never changed.
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(1);
           elementProperty(1, 'val', 2);
         }
       }, 2, 0, [Comp]);
@@ -2795,6 +2834,7 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', 1);
+          select(1);
           elementProperty(1, 'val', 2);
         }
       }, 2, 0, [Parent]);
@@ -2838,6 +2878,7 @@ describe('lifecycles', () => {
           element(1, 'view');
         }
         if (rf & RenderFlags.Update) {
+          select(1);
           elementProperty(1, 'val', bind(ctx.val));
         }
       }, 2, 1, [View]);
@@ -2861,8 +2902,11 @@ describe('lifecycles', () => {
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'val', bind(1));
+          select(1);
           elementProperty(1, 'val', bind(1));
+          select(2);
           elementProperty(2, 'val', bind(2));
+          select(3);
           elementProperty(3, 'val', bind(2));
         }
       }, 4, 4, [Parent, Content]);
@@ -2924,8 +2968,7 @@ describe('lifecycles', () => {
 
       function conditionTpl(rf: RenderFlags, ctx: Cmpt) {
         if (rf & RenderFlags.Create) {
-          template(
-              0, null, 0, 1, 'ng-template', [AttributeMarker.SelectOnly, 'onDestroyDirective']);
+          template(0, null, 0, 1, 'ng-template', [AttributeMarker.Bindings, 'onDestroyDirective']);
         }
       }
 
@@ -2936,7 +2979,7 @@ describe('lifecycles', () => {
        */
       function cmptTpl(rf: RenderFlags, cmpt: Cmpt) {
         if (rf & RenderFlags.Create) {
-          template(0, conditionTpl, 1, 1, 'ng-template', [AttributeMarker.SelectOnly, 'ngIf']);
+          template(0, conditionTpl, 1, 1, 'ng-template', [AttributeMarker.Bindings, 'ngIf']);
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'ngIf', bind(cmpt.showing));

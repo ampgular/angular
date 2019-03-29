@@ -6,10 +6,10 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import {Component, Directive, TemplateRef, ViewContainerRef} from '@angular/core';
+import {Component, ContentChild, ContentChildren, Directive, QueryList, TemplateRef, ViewChild, ViewContainerRef} from '@angular/core';
 import {TestBed} from '@angular/core/testing';
 import {expect} from '@angular/platform-browser/testing/src/matchers';
-import {fixmeIvy, onlyInIvy, polyfillGoogGetMsg} from '@angular/private/testing';
+import {onlyInIvy, polyfillGoogGetMsg} from '@angular/private/testing';
 
 @Directive({
   selector: '[tplRef]',
@@ -23,10 +23,14 @@ class DirectiveWithTplRef {
 class MyComp {
   name = 'John';
   items = ['1', '2', '3'];
+  obj = {a: {b: 'value'}};
   visible = true;
   age = 20;
   count = 2;
   otherLabel = 'other label';
+  clicks = 0;
+
+  onClick() { this.clicks++; }
 }
 
 const TRANSLATIONS: any = {
@@ -42,12 +46,17 @@ const TRANSLATIONS: any = {
   'Item {$interpolation}': 'Article {$interpolation}',
   '\'Single quotes\' and "Double quotes"': '\'Guillemets simples\' et "Guillemets doubles"',
   'My logo': 'Mon logo',
+  '{$interpolation} - {$interpolation_1}': '{$interpolation} - {$interpolation_1} (fr)',
   '{$startTagSpan}My logo{$tagImg}{$closeTagSpan}':
       '{$startTagSpan}Mon logo{$tagImg}{$closeTagSpan}',
   '{$startTagNgTemplate} Hello {$closeTagNgTemplate}{$startTagNgContainer} Bye {$closeTagNgContainer}':
       '{$startTagNgTemplate} Bonjour {$closeTagNgTemplate}{$startTagNgContainer} Au revoir {$closeTagNgContainer}',
+  '{$startTagNgTemplate}{$startTagSpan}Hello{$closeTagSpan}{$closeTagNgTemplate}{$startTagNgContainer}{$startTagSpan}Hello{$closeTagSpan}{$closeTagNgContainer}':
+      '{$startTagNgTemplate}{$startTagSpan}Bonjour{$closeTagSpan}{$closeTagNgTemplate}{$startTagNgContainer}{$startTagSpan}Bonjour{$closeTagSpan}{$closeTagNgContainer}',
   '{$startTagNgTemplate}{$startTagSpan}Hello{$closeTagSpan}{$closeTagNgTemplate}{$startTagNgContainer}{$startTagSpan_1}Hello{$closeTagSpan}{$closeTagNgContainer}':
       '{$startTagNgTemplate}{$startTagSpan}Bonjour{$closeTagSpan}{$closeTagNgTemplate}{$startTagNgContainer}{$startTagSpan_1}Bonjour{$closeTagSpan}{$closeTagNgContainer}',
+  '{$startTagSpan} Hello - 1 {$closeTagSpan}{$startTagSpan_1} Hello - 2 {$startTagSpan_1} Hello - 3 {$startTagSpan_1} Hello - 4 {$closeTagSpan}{$closeTagSpan}{$closeTagSpan}{$startTagSpan} Hello - 5 {$closeTagSpan}':
+      '{$startTagSpan} Bonjour - 1 {$closeTagSpan}{$startTagSpan_1} Bonjour - 2 {$startTagSpan_1} Bonjour - 3 {$startTagSpan_1} Bonjour - 4 {$closeTagSpan}{$closeTagSpan}{$closeTagSpan}{$startTagSpan} Bonjour - 5 {$closeTagSpan}',
   '{VAR_SELECT, select, 10 {ten} 20 {twenty} other {other}}':
       '{VAR_SELECT, select, 10 {dix} 20 {vingt} other {autres}}',
   '{VAR_SELECT, select, 1 {one} 2 {two} other {more than two}}':
@@ -55,7 +64,9 @@ const TRANSLATIONS: any = {
   '{VAR_SELECT, select, 10 {10 - {$startBoldText}ten{$closeBoldText}} 20 {20 - {$startItalicText}twenty{$closeItalicText}} other {{$startTagDiv}{$startUnderlinedText}other{$closeUnderlinedText}{$closeTagDiv}}}':
       '{VAR_SELECT, select, 10 {10 - {$startBoldText}dix{$closeBoldText}} 20 {20 - {$startItalicText}vingt{$closeItalicText}} other {{$startTagDiv}{$startUnderlinedText}autres{$closeUnderlinedText}{$closeTagDiv}}}',
   '{VAR_SELECT_2, select, 10 {ten - {VAR_SELECT, select, 1 {one} 2 {two} other {more than two}}} 20 {twenty - {VAR_SELECT_1, select, 1 {one} 2 {two} other {more than two}}} other {other}}':
-      '{VAR_SELECT_2, select, 10 {dix - {VAR_SELECT, select, 1 {un} 2 {deux} other {plus que deux}}} 20 {vingt - {VAR_SELECT_1, select, 1 {un} 2 {deux} other {plus que deux}}} other {autres}}'
+      '{VAR_SELECT_2, select, 10 {dix - {VAR_SELECT, select, 1 {un} 2 {deux} other {plus que deux}}} 20 {vingt - {VAR_SELECT_1, select, 1 {un} 2 {deux} other {plus que deux}}} other {autres}}',
+  '{$startTagNgTemplate}{$startTagDiv_1}{$startTagDiv}{$startTagSpan}Content{$closeTagSpan}{$closeTagDiv}{$closeTagDiv}{$closeTagNgTemplate}':
+      '{$startTagNgTemplate}Contenu{$closeTagNgTemplate}'
 };
 
 const getFixtureWithOverrides = (overrides = {}) => {
@@ -169,6 +180,13 @@ onlyInIvy('Ivy i18n logic').describe('i18n', function() {
       expect(element).toHaveText('Bonjour John');
     });
 
+    it('should support interpolations with complex expressions', () => {
+      const template = `<div i18n>{{ name | uppercase }} - {{ obj?.a?.b }}</div>`;
+      const fixture = getFixtureWithOverrides({template});
+      const element = fixture.nativeElement.firstChild;
+      expect(element).toHaveText('JOHN - value (fr)');
+    });
+
     it('should properly escape quotes in content', () => {
       const content = `'Single quotes' and "Double quotes"`;
       const template = `<div i18n>${content}</div>`;
@@ -239,6 +257,23 @@ onlyInIvy('Ivy i18n logic').describe('i18n', function() {
       const element = fixture.nativeElement.firstChild;
       expect(element).toHaveText('Bonjour John');
     });
+
+    it('should work correctly with event listeners', () => {
+      const content = 'Hello {{ name }}';
+      const template = `
+        <div i18n (click)="onClick()">${content}</div>
+      `;
+      const fixture = getFixtureWithOverrides({template});
+
+      const element = fixture.nativeElement.firstChild;
+      const instance = fixture.componentInstance;
+
+      expect(element).toHaveText('Bonjour John');
+      expect(instance.clicks).toBe(0);
+
+      element.click();
+      expect(instance.clicks).toBe(1);
+    });
   });
 
   describe('ng-container and ng-template support', () => {
@@ -283,29 +318,56 @@ onlyInIvy('Ivy i18n logic').describe('i18n', function() {
       expect(element.textContent.replace(/\s+/g, ' ').trim()).toBe('Bonjour Au revoir');
     });
 
-    fixmeIvy(
-        'FW-910: Invalid placeholder structure generated when using <ng-template> with content that contains tags')
-        .it('should be able to act as child elements inside i18n block (text + tags)', () => {
-          const content = 'Hello';
-          const template = `
-            <div i18n>
-              <ng-template tplRef>
-                <span>${content}</span>
-              </ng-template>
-              <ng-container>
-                <span>${content}</span>
-              </ng-container>
-            </div>
-          `;
-          const fixture = getFixtureWithOverrides({template});
+    it('should be able to act as child elements inside i18n block (text + tags)', () => {
+      const content = 'Hello';
+      const template = `
+        <div i18n>
+          <ng-template tplRef>
+            <span>${content}</span>
+          </ng-template>
+          <ng-container>
+            <span>${content}</span>
+          </ng-container>
+        </div>
+      `;
+      const fixture = getFixtureWithOverrides({template});
 
-          const element = fixture.nativeElement;
-          const spans = element.getElementsByTagName('span');
-          for (let i = 0; i < spans.length; i++) {
-            const child = spans[i];
-            expect((child as any).innerHTML).toBe('Bonjour');
-          }
-        });
+      const element = fixture.nativeElement;
+      const spans = element.getElementsByTagName('span');
+      for (let i = 0; i < spans.length; i++) {
+        expect(spans[i]).toHaveText('Bonjour');
+      }
+    });
+
+    it('should be able to handle deep nested levels with templates', () => {
+      const content = 'Hello';
+      const template = `
+        <div i18n>
+          <span>
+            ${content} - 1
+          </span>
+          <span *ngIf="visible">
+            ${content} - 2
+            <span *ngIf="visible">
+              ${content} - 3
+              <span *ngIf="visible">
+                ${content} - 4
+              </span>
+            </span>
+          </span>
+          <span>
+            ${content} - 5
+          </span>
+        </div>
+      `;
+      const fixture = getFixtureWithOverrides({template});
+
+      const element = fixture.nativeElement;
+      const spans = element.getElementsByTagName('span');
+      for (let i = 0; i < spans.length; i++) {
+        expect(spans[i].innerHTML).toContain(`Bonjour - ${i + 1}`);
+      }
+    });
 
     it('should handle self-closing tags as content', () => {
       const label = 'My logo';
@@ -333,6 +395,16 @@ onlyInIvy('Ivy i18n logic').describe('i18n', function() {
     it('should handle single ICUs', () => {
       const template = `
         <div i18n>{age, select, 10 {ten} 20 {twenty} other {other}}</div>
+      `;
+      const fixture = getFixtureWithOverrides({template});
+
+      const element = fixture.nativeElement;
+      expect(element).toHaveText('vingt');
+    });
+
+    it('should support ICU-only templates', () => {
+      const template = `
+        {age, select, 10 {ten} 20 {twenty} other {other}}
       `;
       const fixture = getFixtureWithOverrides({template});
 
@@ -472,5 +544,97 @@ onlyInIvy('Ivy i18n logic').describe('i18n', function() {
       const element = fixture.nativeElement;
       expect(element).toHaveText('vingt');
     });
+  });
+
+  describe('queries', () => {
+    function toHtml(element: Element): string {
+      return element.innerHTML.replace(/\sng-reflect-\S*="[^"]*"/g, '')
+          .replace(/<!--bindings=\{(\W.*\W\s*)?\}-->/g, '');
+    }
+
+    it('detached nodes should still be part of query', () => {
+      const template = `
+          <div-query #q i18n>
+            <ng-template>
+              <div>
+                <div *ngIf="visible">
+                  <span text="1">Content</span>
+                </div>
+              </div>
+            </ng-template>
+          </div-query>
+        `;
+
+      @Directive({selector: '[text]', inputs: ['text'], exportAs: 'textDir'})
+      class TextDirective {
+        // TODO(issue/24571): remove '!'.
+        text !: string;
+        constructor() {}
+      }
+
+      @Component({selector: 'div-query', template: '<ng-container #vc></ng-container>'})
+      class DivQuery {
+        // TODO(issue/24571): remove '!'.
+        @ContentChild(TemplateRef) template !: TemplateRef<any>;
+
+        // TODO(issue/24571): remove '!'.
+        @ViewChild('vc', {read: ViewContainerRef})
+        vc !: ViewContainerRef;
+
+        // TODO(issue/24571): remove '!'.
+        @ContentChildren(TextDirective, {descendants: true})
+        query !: QueryList<TextDirective>;
+
+        create() { this.vc.createEmbeddedView(this.template); }
+
+        destroy() { this.vc.clear(); }
+      }
+
+      TestBed.configureTestingModule({declarations: [TextDirective, DivQuery]});
+      const fixture = getFixtureWithOverrides({template});
+      const q = fixture.debugElement.children[0].references.q;
+      expect(q.query.length).toEqual(0);
+
+      // Create embedded view
+      q.create();
+      fixture.detectChanges();
+      expect(q.query.length).toEqual(1);
+      expect(toHtml(fixture.nativeElement))
+          .toEqual(`<div-query><!--ng-container-->Contenu<!--container--></div-query>`);
+
+      // Disable ng-if
+      fixture.componentInstance.visible = false;
+      fixture.detectChanges();
+      expect(q.query.length).toEqual(0);
+      expect(toHtml(fixture.nativeElement))
+          .toEqual(`<div-query><!--ng-container-->Contenu<!--container--></div-query>`);
+    });
+  });
+
+  it('should handle multiple i18n sections', () => {
+    const template = `
+    <div i18n>Section 1</div>
+    <div i18n>Section 2</div>
+    <div i18n>Section 3</div>
+  `;
+    const fixture = getFixtureWithOverrides({template});
+    expect(fixture.nativeElement.innerHTML)
+        .toBe('<div>Section 1</div><div>Section 2</div><div>Section 3</div>');
+  });
+
+  it('should handle multiple i18n sections inside of *ngFor', () => {
+    const template = `
+    <ul *ngFor="let item of [1,2,3]">
+      <li i18n>Section 1</li>
+      <li i18n>Section 2</li>
+      <li i18n>Section 3</li>
+    </ul>
+  `;
+    const fixture = getFixtureWithOverrides({template});
+    const element = fixture.nativeElement;
+    for (let i = 0; i < element.children.length; i++) {
+      const child = element.children[i];
+      expect(child.innerHTML).toBe(`<li>Section 1</li><li>Section 2</li><li>Section 3</li>`);
+    }
   });
 });

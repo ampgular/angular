@@ -16,9 +16,9 @@ import {InternalNgModuleRef, NgModuleFactory as viewEngine_NgModuleFactory, NgMo
 import {NgModuleDef} from '../metadata/ng_module';
 import {assertDefined} from '../util/assert';
 import {stringify} from '../util/stringify';
-
 import {ComponentFactoryResolver} from './component_ref';
 import {getNgModuleDef} from './definition';
+import {maybeUnwrapFn} from './util/misc_utils';
 
 export interface NgModuleType<T = any> extends Type<T> { ngModuleDef: NgModuleDef<T>; }
 
@@ -44,7 +44,7 @@ export class NgModuleRef<T> extends viewEngine_NgModuleRef<T> implements Interna
                      ngModuleDef,
                      `NgModule '${stringify(ngModuleType)}' is not a subtype of 'NgModuleType'.`);
 
-    this._bootstrapComponents = ngModuleDef !.bootstrap;
+    this._bootstrapComponents = maybeUnwrapFn(ngModuleDef !.bootstrap);
     const additionalProviders: StaticProvider[] = [
       {
         provide: viewEngine_NgModuleRef,
@@ -52,7 +52,8 @@ export class NgModuleRef<T> extends viewEngine_NgModuleRef<T> implements Interna
       },
       COMPONENT_FACTORY_RESOLVER
     ];
-    this._r3Injector = createInjector(ngModuleType, _parent, additionalProviders) as R3Injector;
+    this._r3Injector = createInjector(
+        ngModuleType, _parent, additionalProviders, stringify(ngModuleType)) as R3Injector;
     this.instance = this.get(ngModuleType);
   }
 

@@ -6,16 +6,16 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
+import {NgForOfContext} from '@angular/common';
 import {noop} from '../../../compiler/src/render3/view/util';
 import {Component as _Component} from '../../src/core';
-import {defineComponent} from '../../src/render3/definition';
+import {defineComponent, defineDirective} from '../../src/render3/definition';
 import {getTranslationForTemplate, i18n, i18nApply, i18nAttributes, i18nEnd, i18nExp, i18nPostprocess, i18nStart} from '../../src/render3/i18n';
 import {RenderFlags} from '../../src/render3/interfaces/definition';
-import {getNativeByIndex} from '../../src/render3/util';
-
-import {NgIf} from './common_with_def';
-
-import {element, elementEnd, elementStart, template, text, nextContext, bind, elementProperty, projectionDef, projection, elementContainerStart, elementContainerEnd} from '../../src/render3/instructions';
+import {AttributeMarker} from '../../src/render3/interfaces/node';
+import {getNativeByIndex, getTNode} from '../../src/render3/util/view_utils';
+import {NgForOf, NgIf} from './common_with_def';
+import {allocHostVars, element, elementEnd, elementStart, template, text, nextContext, bind, elementProperty, projectionDef, projection, elementContainerStart, elementContainerEnd, textBinding} from '../../src/render3/instructions/all';
 import {COMMENT_MARKER, ELEMENT_MARKER, I18nMutateOpCode, I18nUpdateOpCode, I18nUpdateOpCodes, TI18n} from '../../src/render3/interfaces/i18n';
 import {HEADER_OFFSET, LView, TVIEW} from '../../src/render3/interfaces/view';
 import {ComponentFixture, TemplateFixture} from './render_util';
@@ -83,7 +83,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 1,
-        expandoStartIndex: nbConsts,
         create: [
           'simple text', nbConsts,
           index << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild
@@ -105,7 +104,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 5,
-        expandoStartIndex: nbConsts,
         create: [
           'Hello ',
           nbConsts,
@@ -142,7 +140,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 1,
-        expandoStartIndex: nbConsts,
         create:
             ['', nbConsts, index << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild],
         update: [
@@ -164,7 +161,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 1,
-        expandoStartIndex: nbConsts,
         create:
             ['', nbConsts, index << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild],
         update: [
@@ -198,7 +194,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 2,
-        expandoStartIndex: nbConsts,
         create: [
           '',
           nbConsts,
@@ -229,7 +224,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 2,
-        expandoStartIndex: nbConsts,
         create: [
           spanElement << I18nMutateOpCode.SHIFT_REF | I18nMutateOpCode.Select,
           index << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild,
@@ -257,7 +251,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 1,
-        expandoStartIndex: nbConsts,
         create: [
           bElement << I18nMutateOpCode.SHIFT_REF | I18nMutateOpCode.Select,
           index << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild,
@@ -272,9 +265,9 @@ describe('Runtime i18n', () => {
     });
 
     it('for ICU expressions', () => {
-      const MSG_DIV = `{�0�, plural, 
-        =0 {no <b title="none">emails</b>!} 
-        =1 {one <i>email</i>} 
+      const MSG_DIV = `{�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
         other {�0� <span title="�1�">emails</span>}
       }`;
       const nbConsts = 1;
@@ -291,7 +284,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 5,
-        expandoStartIndex: nbConsts,
         create: [
           COMMENT_MARKER, 'ICU 1', icuCommentNodeIndex,
           index << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild
@@ -308,7 +300,6 @@ describe('Runtime i18n', () => {
         icus: [{
           type: 1,
           vars: [4, 3, 3],
-          expandoStartIndex: icuCommentNodeIndex + 1,
           childIcus: [[], [], []],
           cases: ['0', '1', 'other'],
           create: [
@@ -387,10 +378,10 @@ describe('Runtime i18n', () => {
 
     it('for nested ICU expressions', () => {
       const MSG_DIV = `{�0�, plural,
-        =0 {zero} 
-        other {�0� {�1�, select, 
-                       cat {cats} 
-                       dog {dogs} 
+        =0 {zero}
+        other {�0� {�1�, select,
+                       cat {cats}
+                       dog {dogs}
                        other {animals}
                      }!}
       }`;
@@ -407,7 +398,6 @@ describe('Runtime i18n', () => {
 
       expect(opCodes).toEqual({
         vars: 6,
-        expandoStartIndex: nbConsts,
         create: [
           COMMENT_MARKER, 'ICU 1', icuCommentNodeIndex,
           index << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild
@@ -425,7 +415,6 @@ describe('Runtime i18n', () => {
           {
             type: 0,
             vars: [1, 1, 1],
-            expandoStartIndex: lastTextNodeIndex + 1,
             childIcus: [[], [], []],
             cases: ['cat', 'dog', 'other'],
             create: [
@@ -455,7 +444,6 @@ describe('Runtime i18n', () => {
           {
             type: 1,
             vars: [1, 4],
-            expandoStartIndex: icuCommentNodeIndex + 1,
             childIcus: [[], [0]],
             cases: ['0', 'other'],
             create: [
@@ -616,7 +604,7 @@ describe('Runtime i18n', () => {
         if (rf & RenderFlags.Create) {
           i18nStart(0, MSG_DIV, 1);
           elementStart(1, 'div');
-          template(2, subTemplate_2, 2, 0, 'span', ['ngIf', '']);
+          template(2, subTemplate_2, 2, 0, 'span', [AttributeMarker.Template, 'ngIf']);
           elementEnd();
           i18nEnd();
         }
@@ -645,7 +633,7 @@ describe('Runtime i18n', () => {
             if (rf & RenderFlags.Create) {
               elementStart(0, 'div');
               i18nStart(1, MSG_DIV);
-              template(2, subTemplate_1, 3, 1, 'div', ['ngIf', '']);
+              template(2, subTemplate_1, 3, 1, 'div', [AttributeMarker.Template, 'ngIf']);
               i18nEnd();
               elementEnd();
             }
@@ -662,9 +650,9 @@ describe('Runtime i18n', () => {
     });
 
     it('for ICU expressions', () => {
-      const MSG_DIV = `{�0�, plural, 
-        =0 {no <b title="none">emails</b>!} 
-        =1 {one <i>email</i>} 
+      const MSG_DIV = `{�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
         other {�0� <span title="�1�">emails</span>}
       }`;
       const fixture = prepareFixture(() => {
@@ -678,11 +666,11 @@ describe('Runtime i18n', () => {
     });
 
     it('for multiple ICU expressions', () => {
-      const MSG_DIV = `{�0�, plural, 
-        =0 {no <b title="none">emails</b>!} 
-        =1 {one <i>email</i>} 
+      const MSG_DIV = `{�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
         other {�0� <span title="�1�">emails</span>}
-      } - {�0�, select, 
+      } - {�0�, select,
         other {(�0�)}
       }`;
       const fixture = prepareFixture(() => {
@@ -696,11 +684,11 @@ describe('Runtime i18n', () => {
     });
 
     it('for multiple ICU expressions inside html', () => {
-      const MSG_DIV = `�#2�{�0�, plural, 
-        =0 {no <b title="none">emails</b>!} 
-        =1 {one <i>email</i>} 
+      const MSG_DIV = `�#2�{�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
         other {�0� <span title="�1�">emails</span>}
-      }�/#2��#3�{�0�, select, 
+      }�/#2��#3�{�0�, select,
         other {(�0�)}
       }�/#3�`;
       const fixture = prepareFixture(() => {
@@ -752,7 +740,7 @@ describe('Runtime i18n', () => {
             if (rf & RenderFlags.Create) {
               elementStart(0, 'div');
               i18nStart(1, MSG_DIV);
-              template(2, subTemplate_1, 2, 2, 'span', [3, 'ngIf']);
+              template(2, subTemplate_1, 2, 2, 'span', [AttributeMarker.Template, 'ngIf']);
               i18nEnd();
               elementEnd();
             }
@@ -776,9 +764,9 @@ describe('Runtime i18n', () => {
     });
 
     it('for ICU expressions inside <ng-container>', () => {
-      const MSG_DIV = `{�0�, plural, 
-        =0 {no <b title="none">emails</b>!} 
-        =1 {one <i>email</i>} 
+      const MSG_DIV = `{�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
         other {�0� <span title="�1�">emails</span>}
       }`;
       const fixture = prepareFixture(
@@ -803,10 +791,10 @@ describe('Runtime i18n', () => {
 
     it('for nested ICU expressions', () => {
       const MSG_DIV = `{�0�, plural,
-        =0 {zero} 
-        other {�0� {�1�, select, 
-                       cat {cats} 
-                       dog {dogs} 
+        =0 {zero}
+        other {�0� {�1�, select,
+                       cat {cats}
+                       dog {dogs}
                        other {animals}
                      }!}
       }`;
@@ -1030,9 +1018,9 @@ describe('Runtime i18n', () => {
     });
 
     it('for ICU expressions', () => {
-      const MSG_DIV = `{�0�, plural, 
-        =0 {no <b title="none">emails</b>!} 
-        =1 {one <i>email</i>} 
+      const MSG_DIV = `{�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
         other {�0� <span title="�1�">emails</span>}
       }`;
       const ctx = {value0: 0, value1: 'emails label'};
@@ -1075,11 +1063,11 @@ describe('Runtime i18n', () => {
     });
 
     it('for multiple ICU expressions', () => {
-      const MSG_DIV = `{�0�, plural, 
-        =0 {no <b title="none">emails</b>!} 
-        =1 {one <i>email</i>} 
+      const MSG_DIV = `{�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
         other {�0� <span title="�1�">emails</span>}
-      } - {�0�, select, 
+      } - {�0�, select,
         other {(�0�)}
       }`;
       const ctx = {value0: 0, value1: 'emails label'};
@@ -1127,11 +1115,11 @@ describe('Runtime i18n', () => {
     });
 
     it('for multiple ICU expressions', () => {
-      const MSG_DIV = `�#2�{�0�, plural, 
-        =0 {no <b title="none">emails</b>!} 
-        =1 {one <i>email</i>} 
+      const MSG_DIV = `�#2�{�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
         other {�0� <span title="�1�">emails</span>}
-      }�/#2��#3�{�0�, select, 
+      }�/#2��#3�{�0�, select,
         other {(�0�)}
       }�/#3�`;
       const ctx = {value0: 0, value1: 'emails label'};
@@ -1188,10 +1176,10 @@ describe('Runtime i18n', () => {
 
     it('for nested ICU expressions', () => {
       const MSG_DIV = `{�0�, plural,
-        =0 {zero} 
-        other {�0� {�1�, select, 
-                       cat {cats} 
-                       dog {dogs} 
+        =0 {zero}
+        other {�0� {�1�, select,
+                       cat {cats}
+                       dog {dogs}
                        other {animals}
                      }!}
       }`;
@@ -1298,6 +1286,119 @@ describe('Runtime i18n', () => {
               `<div><a>trad 1</a>hello<b title="start 2 middle 1 end"><e></e><c>trad</c></b></div>`);
     });
 
+    it('should support multiple sibling i18n blocks', () => {
+      // Translated template:
+      // <div>
+      //  <div i18n>Section 1</div>
+      //  <div i18n>Section 2</div>
+      //  <div i18n>Section 3</div>
+      // </div>
+
+      const MSG_DIV_1 = `Section 1`;
+      const MSG_DIV_2 = `Section 2`;
+      const MSG_DIV_3 = `Section 3`;
+
+      class MyApp {
+        static ngComponentDef = defineComponent({
+          type: MyApp,
+          selectors: [['my-app']],
+          factory: () => new MyApp(),
+          consts: 7,
+          vars: 0,
+          template: (rf: RenderFlags, ctx: MyApp) => {
+            if (rf & RenderFlags.Create) {
+              elementStart(0, 'div');
+              {
+                elementStart(1, 'div');
+                { i18n(2, MSG_DIV_1); }
+                elementEnd();
+                elementStart(3, 'div');
+                { i18n(4, MSG_DIV_2); }
+                elementEnd();
+                elementStart(5, 'div');
+                { i18n(6, MSG_DIV_3); }
+                elementEnd();
+              }
+              elementEnd();
+            }
+            if (rf & RenderFlags.Update) {
+              i18nApply(2);
+              i18nApply(4);
+              i18nApply(6);
+            }
+          }
+        });
+      }
+
+      const fixture = new ComponentFixture(MyApp);
+      expect(fixture.html)
+          .toEqual(`<div><div>Section 1</div><div>Section 2</div><div>Section 3</div></div>`);
+    });
+
+    it('should support multiple sibling i18n blocks inside of *ngFor', () => {
+      // Translated template:
+      // <ul *ngFor="let item of [1,2,3]">
+      //  <li i18n>Section 1</li>
+      //  <li i18n>Section 2</li>
+      //  <li i18n>Section 3</li>
+      // </ul>
+
+      const MSG_DIV_1 = `Section 1`;
+      const MSG_DIV_2 = `Section 2`;
+      const MSG_DIV_3 = `Section 3`;
+
+      function liTemplate(rf: RenderFlags, ctx: NgForOfContext<string>) {
+        if (rf & RenderFlags.Create) {
+          elementStart(0, 'ul');
+          elementStart(1, 'li');
+          { i18n(2, MSG_DIV_1); }
+          elementEnd();
+          elementStart(3, 'li');
+          { i18n(4, MSG_DIV_2); }
+          elementEnd();
+          elementStart(5, 'li');
+          { i18n(6, MSG_DIV_3); }
+          elementEnd();
+          elementEnd();
+        }
+        if (rf & RenderFlags.Update) {
+          i18nApply(2);
+          i18nApply(4);
+          i18nApply(6);
+        }
+      }
+
+      class MyApp {
+        items: string[] = ['1', '2', '3'];
+
+        static ngComponentDef = defineComponent({
+          type: MyApp,
+          selectors: [['my-app']],
+          factory: () => new MyApp(),
+          consts: 2,
+          vars: 1,
+          template: (rf: RenderFlags, ctx: MyApp) => {
+            if (rf & RenderFlags.Create) {
+              elementStart(0, 'div');
+              {
+                template(1, liTemplate, 7, 0, 'ul', [AttributeMarker.Template, 'ngFor', 'ngForOf']);
+              }
+              elementEnd();
+            }
+            if (rf & RenderFlags.Update) {
+              elementProperty(1, 'ngForOf', bind(ctx.items));
+            }
+          },
+          directives: () => [NgForOf]
+        });
+      }
+
+      const fixture = new ComponentFixture(MyApp);
+      expect(fixture.html)
+          .toEqual(
+              `<div><ul><li>Section 1</li><li>Section 2</li><li>Section 3</li></ul><ul><li>Section 1</li><li>Section 2</li><li>Section 3</li></ul><ul><li>Section 1</li><li>Section 2</li><li>Section 3</li></ul></div>`);
+    });
+
     it('should support attribute translations on removed elements', () => {
       // Translated template:
       // <div i18n i18n-title title="start {{exp2}} middle {{exp1}} end">
@@ -1348,6 +1449,148 @@ describe('Runtime i18n', () => {
 
       const fixture = new ComponentFixture(MyApp);
       expect(fixture.html).toEqual(`<div title="start 2 middle 1 end">trad 1</div>`);
+    });
+
+    it('should work with directives and host bindings', () => {
+      let directiveInstances: Directive[] = [];
+
+      class Directive {
+        // @HostBinding('className')
+        klass = 'foo';
+
+        static ngDirectiveDef = defineDirective({
+          type: Directive,
+          selectors: [['', 'dir', '']],
+          factory: () => {
+            const instance = new Directive();
+            directiveInstances.push(instance);
+            return instance;
+          },
+          hostBindings: (rf: RenderFlags, ctx: any, elementIndex: number) => {
+            if (rf & RenderFlags.Create) {
+              allocHostVars(1);
+            }
+            if (rf & RenderFlags.Update) {
+              elementProperty(elementIndex, 'className', bind(ctx.klass), null, true);
+            }
+          }
+        });
+      }
+
+      // Translated template:
+      // <div i18n [test]="false" i18n-title title="start {{exp2}} middle {{exp1}} end">
+      //    trad {�0�, plural,
+      //         =0 {no <b title="none">emails</b>!}
+      //         =1 {one <i>email</i>}
+      //         other {�0� emails}
+      //       }
+      // </div>
+
+      const MSG_DIV_1 = `trad {�0�, plural,
+        =0 {no <b title="none">emails</b>!}
+        =1 {one <i>email</i>}
+        other {�0� emails}
+      }`;
+      const MSG_DIV_1_ATTR_1 = ['title', `start �1� middle �0� end`];
+
+      class MyApp {
+        exp1 = 1;
+        exp2 = 2;
+
+        static ngComponentDef = defineComponent({
+          type: MyApp,
+          selectors: [['my-app']],
+          factory: () => new MyApp(),
+          consts: 6,
+          vars: 5,
+          directives: [Directive],
+          template: (rf: RenderFlags, ctx: MyApp) => {
+            if (rf & RenderFlags.Create) {
+              elementStart(0, 'div', [AttributeMarker.Bindings, 'dir']);
+              {
+                i18nAttributes(1, MSG_DIV_1_ATTR_1);
+                i18nStart(2, MSG_DIV_1);
+                {
+                  elementStart(3, 'b', [AttributeMarker.Bindings, 'dir']);  // Will be removed
+                  { i18nAttributes(4, MSG_DIV_1_ATTR_1); }
+                  elementEnd();
+                }
+                i18nEnd();
+              }
+              elementEnd();
+              element(5, 'div', [AttributeMarker.Bindings, 'dir']);
+            }
+            if (rf & RenderFlags.Update) {
+              i18nExp(bind(ctx.exp1));
+              i18nExp(bind(ctx.exp2));
+              i18nApply(1);
+              i18nExp(bind(ctx.exp1));
+              i18nApply(2);
+              i18nExp(bind(ctx.exp1));
+              i18nExp(bind(ctx.exp2));
+              i18nApply(4);
+            }
+          }
+        });
+      }
+
+      const fixture = new ComponentFixture(MyApp);
+      // the "test" attribute should not be reflected in the DOM as it is here only for directive
+      // matching purposes
+      expect(fixture.html)
+          .toEqual(
+              `<div class="foo" title="start 2 middle 1 end">trad one <i>email</i><!--ICU 23--></div><div class="foo"></div>`);
+
+      directiveInstances.forEach(instance => instance.klass = 'bar');
+      fixture.component.exp1 = 2;
+      fixture.component.exp2 = 3;
+      fixture.update();
+      expect(fixture.html)
+          .toEqual(
+              `<div class="bar" title="start 3 middle 2 end">trad 2 emails<!--ICU 23--></div><div class="bar"></div>`);
+    });
+
+    it('should fix the links when adding/moving/removing nodes', () => {
+      const MSG_DIV = `�#2��/#2��#8��/#8��#4��/#4��#5��/#5�Hello World�#3��/#3��#7��/#7�`;
+      let fixture = prepareFixture(() => {
+        elementStart(0, 'div');
+        {
+          i18nStart(1, MSG_DIV);
+          {
+            element(2, 'div2');
+            element(3, 'div3');
+            element(4, 'div4');
+            element(5, 'div5');
+            element(6, 'div6');
+            element(7, 'div7');
+            element(8, 'div8');
+          }
+          i18nEnd();
+        }
+        elementEnd();
+      }, null, 9);
+
+      expect(fixture.html)
+          .toEqual(
+              '<div><div2></div2><div8></div8><div4></div4><div5></div5>Hello World<div3></div3><div7></div7></div>');
+
+      const div0 = getTNode(0, fixture.hostView);
+      const div2 = getTNode(2, fixture.hostView);
+      const div3 = getTNode(3, fixture.hostView);
+      const div4 = getTNode(4, fixture.hostView);
+      const div5 = getTNode(5, fixture.hostView);
+      const div7 = getTNode(7, fixture.hostView);
+      const div8 = getTNode(8, fixture.hostView);
+      const text = getTNode(9, fixture.hostView);
+      expect(div0.child).toEqual(div2);
+      expect(div0.next).toBeNull();
+      expect(div2.next).toEqual(div8);
+      expect(div8.next).toEqual(div4);
+      expect(div4.next).toEqual(div5);
+      expect(div5.next).toEqual(text);
+      expect(text.next).toEqual(div3);
+      expect(div3.next).toEqual(div7);
+      expect(div7.next).toBeNull();
     });
 
     describe('projection', () => {
@@ -1685,7 +1928,7 @@ describe('Runtime i18n', () => {
             selectors: [['parent']],
             directives: [Child],
             factory: () => new Parent(),
-            consts: 2,
+            consts: 3,
             vars: 0,
             template: (rf: RenderFlags, cmp: Parent) => {
               if (rf & RenderFlags.Create) {
@@ -1777,7 +2020,7 @@ describe('Runtime i18n', () => {
 
   describe('i18nPostprocess', () => {
     it('should handle valid cases', () => {
-      const arr = ['�*1:1��#2:1�', '�#4:2�', '�6:4�', '�/#2:1��/*1:1�'];
+      const arr = ['�*1:1��#2:1�', '�#4:1�', '�6:1�', '�/#2:1��/*1:1�'];
       const str = `[${arr.join('|')}]`;
 
       const cases = [
@@ -1853,6 +2096,57 @@ describe('Runtime i18n', () => {
       cases.forEach(([input, replacements, output]) => {
         expect(i18nPostprocess(input as string, replacements as any)).toEqual(output as string);
       });
+    });
+
+    it('should handle nested template represented by multi-value placeholders', () => {
+      /**
+       * <div i18n>
+       *   <span>
+       *     Hello - 1
+       *   </span>
+       *   <span *ngIf="visible">
+       *     Hello - 2
+       *     <span *ngIf="visible">
+       *       Hello - 3
+       *       <span *ngIf="visible">
+       *         Hello - 4
+       *       </span>
+       *     </span>
+       *   </span>
+       *   <span>
+       *     Hello - 5
+       *   </span>
+       * </div>
+       */
+      const generated = `
+        [�#2�|�#4�] Bonjour - 1 [�/#2�|�/#1:3��/*2:3�|�/#1:2��/*2:2�|�/#1:1��/*3:1�|�/#4�]
+        [�*3:1��#1:1�|�*2:2��#1:2�|�*2:3��#1:3�]
+          Bonjour - 2
+          [�*3:1��#1:1�|�*2:2��#1:2�|�*2:3��#1:3�]
+            Bonjour - 3
+            [�*3:1��#1:1�|�*2:2��#1:2�|�*2:3��#1:3�] Bonjour - 4 [�/#2�|�/#1:3��/*2:3�|�/#1:2��/*2:2�|�/#1:1��/*3:1�|�/#4�]
+          [�/#2�|�/#1:3��/*2:3�|�/#1:2��/*2:2�|�/#1:1��/*3:1�|�/#4�]
+        [�/#2�|�/#1:3��/*2:3�|�/#1:2��/*2:2�|�/#1:1��/*3:1�|�/#4�]
+        [�#2�|�#4�] Bonjour - 5 [�/#2�|�/#1:3��/*2:3�|�/#1:2��/*2:2�|�/#1:1��/*3:1�|�/#4�]
+      `;
+      const final = `
+        �#2� Bonjour - 1 �/#2�
+        �*3:1�
+          �#1:1�
+            Bonjour - 2
+            �*2:2�
+              �#1:2�
+                Bonjour - 3
+                �*2:3�
+                  �#1:3� Bonjour - 4 �/#1:3�
+                �/*2:3�
+              �/#1:2�
+            �/*2:2�
+          �/#1:1�
+        �/*3:1�
+        �#4� Bonjour - 5 �/#4�
+      `;
+      expect(i18nPostprocess(generated.replace(/\s+/g, ''))).toEqual(final.replace(/\s+/g, ''));
     });
 
     it('should throw in case we have invalid string', () => {

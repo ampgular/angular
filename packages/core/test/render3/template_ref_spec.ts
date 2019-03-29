@@ -9,7 +9,7 @@
 import {TemplateRef} from '@angular/core';
 
 import {ComponentFixture, createComponent, getDirectiveOnNode} from './render_util';
-import {bind, directiveInject, element, elementContainerStart, elementContainerEnd, elementProperty, template, text} from '../../src/render3/instructions';
+import {bind, directiveInject, element, elementContainerStart, elementContainerEnd, elementProperty, template, text} from '../../src/render3/instructions/all';
 import {RenderFlags, defineDirective, AttributeMarker} from '../../src/render3/index';
 
 import {NgIf} from './common_with_def';
@@ -108,7 +108,7 @@ describe('TemplateRef', () => {
 
       function embeddedTemplate(rf: RenderFlags, ctx: any) {
         if (rf & RenderFlags.Create) {
-          template(0, ngIfTemplate, 1, 0, 'ng-template', [AttributeMarker.SelectOnly, 'ngIf']);
+          template(0, ngIfTemplate, 1, 0, 'ng-template', [AttributeMarker.Bindings, 'ngIf']);
         }
         if (rf & RenderFlags.Update) {
           elementProperty(0, 'ngIf', bind(ctx.showing));

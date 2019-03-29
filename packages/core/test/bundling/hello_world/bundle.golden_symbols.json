@@ -9,10 +9,13 @@
     "name": "BLOOM_MASK"
   },
   {
-    "name": "CLEAN_PROMISE"
+    "name": "CHILD_HEAD"
   },
   {
-    "name": "CONTAINER_INDEX"
+    "name": "CHILD_TAIL"
+  },
+  {
+    "name": "CLEAN_PROMISE"
   },
   {
     "name": "CONTEXT"
@@ -43,9 +46,6 @@
   },
   {
     "name": "HOST"
-  },
-  {
-    "name": "HOST_NODE"
   },
   {
     "name": "INJECTOR"
@@ -87,13 +87,13 @@
     "name": "ObjectUnsubscribedErrorImpl"
   },
   {
-    "name": "OnChangesDirectiveWrapper"
-  },
-  {
     "name": "PARENT"
   },
   {
     "name": "PARENT_INJECTOR"
+  },
+  {
+    "name": "PREORDER_HOOK_FLAGS"
   },
   {
     "name": "RENDERER"
@@ -102,10 +102,19 @@
     "name": "RENDERER_FACTORY"
   },
   {
+    "name": "RendererStyleFlags3"
+  },
+  {
     "name": "SANITIZER"
   },
   {
     "name": "TVIEW"
+  },
+  {
+    "name": "TYPE"
+  },
+  {
+    "name": "T_HOST"
   },
   {
     "name": "UnsubscriptionErrorImpl"
@@ -117,10 +126,7 @@
     "name": "ViewEncapsulation"
   },
   {
-    "name": "__self"
-  },
-  {
-    "name": "__window"
+    "name": "__values"
   },
   {
     "name": "_global"
@@ -129,7 +135,13 @@
     "name": "_renderCompCount"
   },
   {
+    "name": "addToViewTree"
+  },
+  {
     "name": "appendChild"
+  },
+  {
+    "name": "applyOnCreateInstructions"
   },
   {
     "name": "attachPatchData"
@@ -139,6 +151,9 @@
   },
   {
     "name": "bloomAdd"
+  },
+  {
+    "name": "callHook"
   },
   {
     "name": "callHooks"
@@ -180,9 +195,6 @@
     "name": "createViewBlueprint"
   },
   {
-    "name": "createViewQuery"
-  },
-  {
     "name": "defaultScheduler"
   },
   {
@@ -201,7 +213,10 @@
     "name": "executeHooks"
   },
   {
-    "name": "executeInitHooks"
+    "name": "executePreOrderHooks"
+  },
+  {
+    "name": "executeViewQueryFn"
   },
   {
     "name": "extractDirectiveDef"
@@ -234,6 +249,9 @@
     "name": "getDirectiveDef"
   },
   {
+    "name": "getGlobal"
+  },
+  {
     "name": "getHighestElementOrICUContainer"
   },
   {
@@ -252,7 +270,10 @@
     "name": "getLView"
   },
   {
-    "name": "getLViewChild"
+    "name": "getLViewParent"
+  },
+  {
+    "name": "getNativeAnchorNode"
   },
   {
     "name": "getNativeByTNode"
@@ -315,19 +336,22 @@
     "name": "invertObject"
   },
   {
+    "name": "invokeHostBindingsInCreationMode"
+  },
+  {
     "name": "isComponentDef"
   },
   {
     "name": "isCreationMode"
   },
   {
-    "name": "isExactInstanceOf"
-  },
-  {
     "name": "isFactory"
   },
   {
-    "name": "isOnChangesDirectiveWrapper"
+    "name": "isLContainer"
+  },
+  {
+    "name": "isLView"
   },
   {
     "name": "isProceduralRenderer"
@@ -343,6 +367,12 @@
   },
   {
     "name": "namespaceHTML"
+  },
+  {
+    "name": "nativeAppendChild"
+  },
+  {
+    "name": "nativeAppendOrInsertBefore"
   },
   {
     "name": "nativeInsertBefore"
@@ -361,9 +391,6 @@
   },
   {
     "name": "queueComponentIndexForCheck"
-  },
-  {
-    "name": "readElementValue"
   },
   {
     "name": "readPatchedData"
@@ -393,19 +420,34 @@
     "name": "renderEmbeddedTemplate"
   },
   {
+    "name": "renderInitialClasses"
+  },
+  {
+    "name": "renderInitialStyles"
+  },
+  {
     "name": "renderStringify"
   },
   {
     "name": "resetComponentState"
   },
   {
+    "name": "resetPreOrderHookFlags"
+  },
+  {
+    "name": "setActiveHost"
+  },
+  {
     "name": "setBindingRoot"
+  },
+  {
+    "name": "setClass"
   },
   {
     "name": "setCurrentDirectiveDef"
   },
   {
-    "name": "setFirstTemplatePass"
+    "name": "setCurrentQueryIndex"
   },
   {
     "name": "setHostBindings"
@@ -423,6 +465,9 @@
     "name": "setPreviousOrParentTNode"
   },
   {
+    "name": "setStyle"
+  },
+  {
     "name": "setTNodeAndViewData"
   },
   {
@@ -435,12 +480,9 @@
     "name": "tickRootContext"
   },
   {
-    "name": "unwrapOnChangesDirectiveWrapper"
+    "name": "unwrapRNode"
   },
   {
-    "name": "updateViewQuery"
-  },
-  {
-    "name": "viewAttached"
+    "name": "viewAttachedToChangeDetector"
   }
 ]

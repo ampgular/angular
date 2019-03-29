@@ -9,32 +9,43 @@
 import {SRCSET_ATTRS, URI_ATTRS, VALID_ATTRS, VALID_ELEMENTS, getTemplateContent} from '../sanitization/html_sanitizer';
 import {InertBodyHelper} from '../sanitization/inert_body';
 import {_sanitizeUrl, sanitizeSrcset} from '../sanitization/url_sanitizer';
+import {addAllToArray} from '../util/array_utils';
 import {assertDefined, assertEqual, assertGreaterThan} from '../util/assert';
+
 import {attachPatchData} from './context_discovery';
-import {allocExpando, createNodeAtIndex, elementAttribute, load, textBinding} from './instructions';
+import {allocExpando, createNodeAtIndex, elementAttribute, load, textBinding} from './instructions/all';
 import {LContainer, NATIVE} from './interfaces/container';
 import {COMMENT_MARKER, ELEMENT_MARKER, I18nMutateOpCode, I18nMutateOpCodes, I18nUpdateOpCode, I18nUpdateOpCodes, IcuType, TI18n, TIcu} from './interfaces/i18n';
 import {TElementNode, TIcuContainerNode, TNode, TNodeType} from './interfaces/node';
-import {RComment, RElement} from './interfaces/renderer';
+import {RComment, RElement, RText} from './interfaces/renderer';
 import {SanitizerFn} from './interfaces/sanitization';
 import {StylingContext} from './interfaces/styling';
-import {BINDING_INDEX, HEADER_OFFSET, HOST_NODE, LView, RENDERER, TVIEW, TView} from './interfaces/view';
-import {appendChild, createTextNode, removeChild} from './node_manipulation';
+import {BINDING_INDEX, HEADER_OFFSET, LView, RENDERER, TVIEW, TView, T_HOST} from './interfaces/view';
+import {appendChild, createTextNode, nativeRemoveNode} from './node_manipulation';
 import {getIsParent, getLView, getPreviousOrParentTNode, setIsParent, setPreviousOrParentTNode} from './state';
 import {NO_CHANGE} from './tokens';
-import {addAllToArray, getNativeByIndex, getNativeByTNode, getTNode, isLContainer, renderStringify} from './util';
+import {renderStringify} from './util/misc_utils';
+import {getNativeByIndex, getNativeByTNode, getTNode, isLContainer} from './util/view_utils';
 
 const MARKER = `�`;
-const ICU_BLOCK_REGEX = /^\s*(�\d+:?\d*�)\s*,\s*(select|plural)\s*,/;
+const ICU_BLOCK_REGEXP = /^\s*(�\d+:?\d*�)\s*,\s*(select|plural)\s*,/;
 const SUBTEMPLATE_REGEXP = /�\/?\*(\d+:\d+)�/gi;
 const PH_REGEXP = /�(\/?[#*]\d+):?\d*�/gi;
 const BINDING_REGEXP = /�(\d+):?\d*�/gi;
 const ICU_REGEXP = /({\s*�\d+:?\d*�\s*,\s*\S{6}\s*,[\s\S]*})/gi;
 
-// i18nPostproocess regexps
-const PP_PLACEHOLDERS = /\[(�.+?�?)\]/g;
-const PP_ICU_VARS = /({\s*)(VAR_(PLURAL|SELECT)(_\d+)?)(\s*,)/g;
-const PP_ICUS = /�I18N_EXP_(ICU(_\d+)?)�/g;
+// i18nPostprocess consts
+const ROOT_TEMPLATE_ID = 0;
+const PP_MULTI_VALUE_PLACEHOLDERS_REGEXP = /\[(�.+?�?)\]/;
+const PP_PLACEHOLDERS_REGEXP = /\[(�.+?�?)\]|(�\/?\*\d+:\d+�)/g;
+const PP_ICU_VARS_REGEXP = /({\s*)(VAR_(PLURAL|SELECT)(_\d+)?)(\s*,)/g;
+const PP_ICUS_REGEXP = /�I18N_EXP_(ICU(_\d+)?)�/g;
+const PP_CLOSE_TEMPLATE_REGEXP = /\/\*/;
+const PP_TEMPLATE_ID_REGEXP = /\d+\:(\d+)/;
+
+// Parsed placeholder structure used in postprocessing (within `i18nPostprocess` function)
+// Contains the following fields: [templateId, isCloseTemplateTag, placeholder]
+type PostprocessPlaceholder = [number, boolean, string];
 
 interface IcuExpression {
   type: IcuType;
@@ -104,7 +115,7 @@ function extractParts(pattern: string): (string | IcuExpression)[] {
       if (braceStack.length == 0) {
         // End of the block.
         const block = pattern.substring(prevPos, pos);
-        if (ICU_BLOCK_REGEX.test(block)) {
+        if (ICU_BLOCK_REGEXP.test(block)) {
           results.push(parseICUBlock(block));
         } else if (block) {  // Don't push empty strings
           results.push(block);
@@ -142,7 +153,7 @@ function parseICUBlock(pattern: string): IcuExpression {
   const values: (string | IcuExpression)[][] = [];
   let icuType = IcuType.plural;
   let mainBinding = 0;
-  pattern = pattern.replace(ICU_BLOCK_REGEX, function(str: string, binding: string, type: string) {
+  pattern = pattern.replace(ICU_BLOCK_REGEXP, function(str: string, binding: string, type: string) {
     if (type === 'select') {
       icuType = IcuType.select;
     } else {
@@ -343,19 +354,24 @@ export function i18nStart(index: number, message: string, subTemplateIndex?: num
   }
 }
 
+// Count for the number of vars that will be allocated for each i18n block.
+// It is global because this is used in multiple functions that include loops and recursive calls.
+// This is reset to 0 when `i18nStartFirstPass` is called.
+let i18nVarsCount: number;
+
 /**
  * See `i18nStart` above.
  */
 function i18nStartFirstPass(
     tView: TView, index: number, message: string, subTemplateIndex?: number) {
   const viewData = getLView();
-  const expandoStartIndex = tView.blueprint.length - HEADER_OFFSET;
+  const startIndex = tView.blueprint.length - HEADER_OFFSET;
+  i18nVarsCount = 0;
   const previousOrParentTNode = getPreviousOrParentTNode();
   const parentTNode = getIsParent() ? getPreviousOrParentTNode() :
                                       previousOrParentTNode && previousOrParentTNode.parent;
-  let parentIndex = parentTNode && parentTNode !== viewData[HOST_NODE] ?
-      parentTNode.index - HEADER_OFFSET :
-      index;
+  let parentIndex =
+      parentTNode && parentTNode !== viewData[T_HOST] ? parentTNode.index - HEADER_OFFSET : index;
   let parentIndexPointer = 0;
   parentIndexStack[parentIndexPointer] = parentIndex;
   const createOpCodes: I18nMutateOpCodes = [];
@@ -400,8 +416,7 @@ function i18nStartFirstPass(
         if (j & 1) {
           // Odd indexes are ICU expressions
           // Create the comment node that will anchor the ICU expression
-          allocExpando(viewData);
-          const icuNodeIndex = tView.blueprint.length - 1 - HEADER_OFFSET;
+          const icuNodeIndex = startIndex + i18nVarsCount++;
           createOpCodes.push(
               COMMENT_MARKER, ngDevMode ? `ICU ${icuNodeIndex}` : '', icuNodeIndex,
               parentIndex << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild);
@@ -425,27 +440,25 @@ function i18nStartFirstPass(
           // Even indexes are text (including bindings)
           const hasBinding = text.match(BINDING_REGEXP);
           // Create text nodes
-          allocExpando(viewData);
-          const textNodeIndex = tView.blueprint.length - 1 - HEADER_OFFSET;
+          const textNodeIndex = startIndex + i18nVarsCount++;
           createOpCodes.push(
               // If there is a binding, the value will be set during update
               hasBinding ? '' : text, textNodeIndex,
               parentIndex << I18nMutateOpCode.SHIFT_PARENT | I18nMutateOpCode.AppendChild);
 
           if (hasBinding) {
-            addAllToArray(
-                generateBindingUpdateOpCodes(text, tView.blueprint.length - 1 - HEADER_OFFSET),
-                updateOpCodes);
+            addAllToArray(generateBindingUpdateOpCodes(text, textNodeIndex), updateOpCodes);
           }
         }
       }
     }
   }
 
+  allocExpando(viewData, i18nVarsCount);
+
   // NOTE: local var needed to properly assert the type of `TI18n`.
   const tI18n: TI18n = {
-    vars: tView.blueprint.length - HEADER_OFFSET - expandoStartIndex,
-    expandoStartIndex,
+    vars: i18nVarsCount,
     create: createOpCodes,
     update: updateOpCodes,
     icus: icuExpressions.length ? icuExpressions : null,
@@ -455,11 +468,13 @@ function i18nStartFirstPass(
 
 function appendI18nNode(tNode: TNode, parentTNode: TNode, previousTNode: TNode | null): TNode {
   ngDevMode && ngDevMode.rendererMoveNode++;
+  const nextNode = tNode.next;
   const viewData = getLView();
   if (!previousTNode) {
     previousTNode = parentTNode;
   }
-  // re-organize node tree to put this node in the correct position.
+
+  // Re-organize node tree to put this node in the correct position.
   if (previousTNode === parentTNode && tNode !== parentTNode.child) {
     tNode.next = parentTNode.child;
     parentTNode.child = tNode;
@@ -470,8 +485,17 @@ function appendI18nNode(tNode: TNode, parentTNode: TNode, previousTNode: TNode |
     tNode.next = null;
   }
 
-  if (parentTNode !== viewData[HOST_NODE]) {
+  if (parentTNode !== viewData[T_HOST]) {
     tNode.parent = parentTNode as TElementNode;
+  }
+
+  // If tNode was moved around, we might need to fix a broken link.
+  let cursor: TNode|null = tNode.next;
+  while (cursor) {
+    if (cursor.next === tNode) {
+      cursor.next = nextNode;
+    }
+    cursor = cursor.next;
   }
 
   appendChild(getNativeByTNode(tNode, viewData), tNode, viewData);
@@ -505,24 +529,62 @@ function appendI18nNode(tNode: TNode, parentTNode: TNode, previousTNode: TNode |
  */
 export function i18nPostprocess(
     message: string, replacements: {[key: string]: (string | string[])} = {}): string {
-  //
-  // Step 1: resolve all multi-value cases (like [�*1:1��#2:1�|�#4:1�|�5�])
-  //
-  const matches: {[key: string]: string[]} = {};
-  let result = message.replace(PP_PLACEHOLDERS, (_match, content: string): string => {
-    if (!matches[content]) {
-      matches[content] = content.split('|');
-    }
-    if (!matches[content].length) {
-      throw new Error(`i18n postprocess: unmatched placeholder - ${content}`);
-    }
-    return matches[content].shift() !;
-  });
+  /**
+   * Step 1: resolve all multi-value placeholders like [�#5�|�*1:1��#2:1�|�#4:1�]
+   *
+   * Note: due to the way we process nested templates (BFS), multi-value placeholders are typically
+   * grouped by templates, for example: [�#5�|�#6�|�#1:1�|�#3:2�] where �#5� and �#6� belong to root
+   * template, �#1:1� belong to nested template with index 1 and �#1:2� - nested template with index
+   * 3. However in real templates the order might be different: i.e. �#1:1� and/or �#3:2� may go in
+   * front of �#6�. The post processing step restores the right order by keeping track of the
+   * template id stack and looks for placeholders that belong to the currently active template.
+   */
+  let result: string = message;
+  if (PP_MULTI_VALUE_PLACEHOLDERS_REGEXP.test(message)) {
+    const matches: {[key: string]: PostprocessPlaceholder[]} = {};
+    const templateIdsStack: number[] = [ROOT_TEMPLATE_ID];
+    result = result.replace(PP_PLACEHOLDERS_REGEXP, (m: any, phs: string, tmpl: string): string => {
+      const content = phs || tmpl;
+      if (!matches[content]) {
+        const placeholders: PostprocessPlaceholder[] = [];
+        content.split('|').forEach((placeholder: string) => {
+          const match = placeholder.match(PP_TEMPLATE_ID_REGEXP);
+          const templateId = match ? parseInt(match[1], 10) : ROOT_TEMPLATE_ID;
+          const isCloseTemplateTag = PP_CLOSE_TEMPLATE_REGEXP.test(placeholder);
+          placeholders.push([templateId, isCloseTemplateTag, placeholder]);
+        });
+        matches[content] = placeholders;
+      }
+      if (!matches[content].length) {
+        throw new Error(`i18n postprocess: unmatched placeholder - ${content}`);
+      }
+      const currentTemplateId = templateIdsStack[templateIdsStack.length - 1];
+      const placeholders = matches[content];
+      let idx = 0;
+      // find placeholder index that matches current template id
+      for (let i = 0; i < placeholders.length; i++) {
+        if (placeholders[i][0] === currentTemplateId) {
+          idx = i;
+          break;
+        }
+      }
+      // update template id stack based on the current tag extracted
+      const [templateId, isCloseTemplateTag, placeholder] = placeholders[idx];
+      if (isCloseTemplateTag) {
+        templateIdsStack.pop();
+      } else if (currentTemplateId !== templateId) {
+        templateIdsStack.push(templateId);
+      }
+      // remove processed tag from the list
+      placeholders.splice(idx, 1);
+      return placeholder;
+    });
 
-  // verify that we injected all values
-  const hasUnmatchedValues = Object.keys(matches).some(key => !!matches[key].length);
-  if (hasUnmatchedValues) {
-    throw new Error(`i18n postprocess: unmatched values - ${JSON.stringify(matches)}`);
+    // verify that we injected all values
+    const hasUnmatchedValues = Object.keys(matches).some(key => !!matches[key].length);
+    if (hasUnmatchedValues) {
+      throw new Error(`i18n postprocess: unmatched values - ${JSON.stringify(matches)}`);
+    }
   }
 
   // return current result if no replacements specified
@@ -530,18 +592,18 @@ export function i18nPostprocess(
     return result;
   }
 
-  //
-  // Step 2: replace all ICU vars (like "VAR_PLURAL")
-  //
-  result = result.replace(PP_ICU_VARS, (match, start, key, _type, _idx, end): string => {
+  /**
+   * Step 2: replace all ICU vars (like "VAR_PLURAL")
+   */
+  result = result.replace(PP_ICU_VARS_REGEXP, (match, start, key, _type, _idx, end): string => {
     return replacements.hasOwnProperty(key) ? `${start}${replacements[key]}${end}` : match;
   });
 
-  //
-  // Step 3: replace all ICU references with corresponding values (like �ICU_EXP_ICU_1�)
-  // in case multiple ICUs have the same placeholder name
-  //
-  result = result.replace(PP_ICUS, (match, key): string => {
+  /**
+   * Step 3: replace all ICU references with corresponding values (like �ICU_EXP_ICU_1�) in case
+   * multiple ICUs have the same placeholder name
+   */
+  result = result.replace(PP_ICUS_REGEXP, (match, key): string => {
     if (replacements.hasOwnProperty(key)) {
       const list = replacements[key] as string[];
       if (!list.length) {
@@ -578,17 +640,36 @@ function i18nEndFirstPass(tView: TView) {
   const tI18n = tView.data[rootIndex + HEADER_OFFSET] as TI18n;
   ngDevMode && assertDefined(tI18n, `You should call i18nStart before i18nEnd`);
 
-  // The last placeholder that was added before `i18nEnd`
-  const previousOrParentTNode = getPreviousOrParentTNode();
-  const visitedPlaceholders = readCreateOpCodes(rootIndex, tI18n.create, tI18n.icus, viewData);
+  // Find the last node that was added before `i18nEnd`
+  let lastCreatedNode = getPreviousOrParentTNode();
 
-  // Remove deleted placeholders
-  // The last placeholder that was added before `i18nEnd` is `previousOrParentTNode`
-  for (let i = rootIndex + 1; i <= previousOrParentTNode.index - HEADER_OFFSET; i++) {
-    if (visitedPlaceholders.indexOf(i) === -1) {
+  // Read the instructions to insert/move/remove DOM elements
+  const visitedNodes = readCreateOpCodes(rootIndex, tI18n.create, tI18n.icus, viewData);
+
+  // Remove deleted nodes
+  for (let i = rootIndex + 1; i <= lastCreatedNode.index - HEADER_OFFSET; i++) {
+    if (visitedNodes.indexOf(i) === -1) {
       removeNode(i, viewData);
     }
   }
+}
+
+/**
+ * Creates and stores the dynamic TNode, and unhooks it from the tree for now.
+ */
+function createDynamicNodeAtIndex(
+    index: number, type: TNodeType, native: RElement | RText | null,
+    name: string | null): TElementNode|TIcuContainerNode {
+  const previousOrParentTNode = getPreviousOrParentTNode();
+  const tNode = createNodeAtIndex(index, type as any, native, name, null);
+
+  // We are creating a dynamic node, the previous tNode might not be pointing at this node.
+  // We will link ourselves into the tree later with `appendI18nNode`.
+  if (previousOrParentTNode.next === tNode) {
+    previousOrParentTNode.next = null;
+  }
+
+  return tNode;
 }
 
 function readCreateOpCodes(
@@ -597,7 +678,7 @@ function readCreateOpCodes(
   const renderer = getLView()[RENDERER];
   let currentTNode: TNode|null = null;
   let previousTNode: TNode|null = null;
-  const visitedPlaceholders: number[] = [];
+  const visitedNodes: number[] = [];
   for (let i = 0; i < createOpCodes.length; i++) {
     const opCode = createOpCodes[i];
     if (typeof opCode == 'string') {
@@ -605,7 +686,8 @@ function readCreateOpCodes(
       const textNodeIndex = createOpCodes[++i] as number;
       ngDevMode && ngDevMode.rendererCreateTextNode++;
       previousTNode = currentTNode;
-      currentTNode = createNodeAtIndex(textNodeIndex, TNodeType.Element, textRNode, null, null);
+      currentTNode = createDynamicNodeAtIndex(textNodeIndex, TNodeType.Element, textRNode, null);
+      visitedNodes.push(textNodeIndex);
       setIsParent(false);
     } else if (typeof opCode == 'number') {
       switch (opCode & I18nMutateOpCode.MASK_OPCODE) {
@@ -615,7 +697,7 @@ function readCreateOpCodes(
           if (destinationNodeIndex === index) {
             // If the destination node is `i18nStart`, we don't have a
             // top-level node and we should use the host node instead
-            destinationTNode = viewData[HOST_NODE] !;
+            destinationTNode = viewData[T_HOST] !;
           } else {
             destinationTNode = getTNode(destinationNodeIndex, viewData);
           }
@@ -624,11 +706,10 @@ function readCreateOpCodes(
                   currentTNode !,
                   `You need to create or select a node before you can insert it into the DOM`);
           previousTNode = appendI18nNode(currentTNode !, destinationTNode, previousTNode);
-          destinationTNode.next = null;
           break;
         case I18nMutateOpCode.Select:
           const nodeIndex = opCode >>> I18nMutateOpCode.SHIFT_REF;
-          visitedPlaceholders.push(nodeIndex);
+          visitedNodes.push(nodeIndex);
           previousTNode = currentTNode;
           currentTNode = getTNode(nodeIndex, viewData);
           if (currentTNode) {
@@ -664,8 +745,9 @@ function readCreateOpCodes(
           const commentRNode = renderer.createComment(commentValue);
           ngDevMode && ngDevMode.rendererCreateComment++;
           previousTNode = currentTNode;
-          currentTNode =
-              createNodeAtIndex(commentNodeIndex, TNodeType.IcuContainer, commentRNode, null, null);
+          currentTNode = createDynamicNodeAtIndex(
+              commentNodeIndex, TNodeType.IcuContainer, commentRNode, null);
+          visitedNodes.push(commentNodeIndex);
           attachPatchData(commentRNode, viewData);
           (currentTNode as TIcuContainerNode).activeCaseIndex = null;
           // We will add the case nodes later, during the update phase
@@ -680,8 +762,9 @@ function readCreateOpCodes(
           const elementRNode = renderer.createElement(tagNameValue);
           ngDevMode && ngDevMode.rendererCreateElement++;
           previousTNode = currentTNode;
-          currentTNode = createNodeAtIndex(
-              elementNodeIndex, TNodeType.Element, elementRNode, tagNameValue, null);
+          currentTNode = createDynamicNodeAtIndex(
+              elementNodeIndex, TNodeType.Element, elementRNode, tagNameValue);
+          visitedNodes.push(elementNodeIndex);
           break;
         default:
           throw new Error(`Unable to determine the type of mutate operation for "${opCode}"`);
@@ -691,7 +774,7 @@ function readCreateOpCodes(
 
   setIsParent(false);
 
-  return visitedPlaceholders;
+  return visitedNodes;
 }
 
 function readUpdateOpCodes(
@@ -716,6 +799,9 @@ function readUpdateOpCodes(
             value += renderStringify(viewData[bindingsStartIndex - opCode]);
           } else {
             const nodeIndex = opCode >>> I18nUpdateOpCode.SHIFT_REF;
+            let tIcuIndex: number;
+            let tIcu: TIcu;
+            let icuTNode: TIcuContainerNode;
             switch (opCode & I18nUpdateOpCode.MASK_OPCODE) {
               case I18nUpdateOpCode.Attr:
                 const attrName = updateOpCodes[++j] as string;
@@ -726,9 +812,9 @@ function readUpdateOpCodes(
                 textBinding(nodeIndex, value);
                 break;
               case I18nUpdateOpCode.IcuSwitch:
-                let tIcuIndex = updateOpCodes[++j] as number;
-                let tIcu = icus ![tIcuIndex];
-                let icuTNode = getTNode(nodeIndex, viewData) as TIcuContainerNode;
+                tIcuIndex = updateOpCodes[++j] as number;
+                tIcu = icus ![tIcuIndex];
+                icuTNode = getTNode(nodeIndex, viewData) as TIcuContainerNode;
                 // If there is an active case, delete the old nodes
                 if (icuTNode.activeCaseIndex !== null) {
                   const removeCodes = tIcu.remove[icuTNode.activeCaseIndex];
@@ -784,19 +870,18 @@ function removeNode(index: number, viewData: LView) {
   const removedPhTNode = getTNode(index, viewData);
   const removedPhRNode = getNativeByIndex(index, viewData);
   if (removedPhRNode) {
-    removeChild(removedPhTNode, removedPhRNode, viewData);
+    nativeRemoveNode(viewData[RENDERER], removedPhRNode);
   }
-
-  removedPhTNode.detached = true;
-  ngDevMode && ngDevMode.rendererRemoveNode++;
 
   const slotValue = load(index) as RElement | RComment | LContainer | StylingContext;
   if (isLContainer(slotValue)) {
     const lContainer = slotValue as LContainer;
     if (removedPhTNode.type !== TNodeType.Container) {
-      removeChild(removedPhTNode, lContainer[NATIVE], viewData);
+      nativeRemoveNode(viewData[RENDERER], lContainer[NATIVE]);
     }
   }
+
+  ngDevMode && ngDevMode.rendererRemoveNode++;
 }
 
 /**
@@ -1334,18 +1419,15 @@ function icuStart(
   const tIcu: TIcu = {
     type: icuExpression.type,
     vars,
-    expandoStartIndex: expandoStartIndex + 1, childIcus,
+    childIcus,
     cases: icuExpression.cases,
     create: createCodes,
     remove: removeCodes,
     update: updateCodes
   };
   tIcus.push(tIcu);
-  const lView = getLView();
-  const worstCaseSize = Math.max(...vars);
-  for (let i = 0; i < worstCaseSize; i++) {
-    allocExpando(lView);
-  }
+  // Adding the maximum possible of vars needed (based on the cases with the most vars)
+  i18nVarsCount += Math.max(...vars);
 }
 
 /**

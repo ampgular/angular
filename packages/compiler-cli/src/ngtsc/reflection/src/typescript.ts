@@ -8,7 +8,8 @@
 
 import * as ts from 'typescript';
 
-import {ClassMember, ClassMemberKind, CtorParameter, Declaration, Decorator, FunctionDefinition, Import, ReflectionHost} from './host';
+import {ClassDeclaration, ClassMember, ClassMemberKind, CtorParameter, Declaration, Decorator, FunctionDefinition, Import, ReflectionHost} from './host';
+import {typeToValue} from './type_to_value';
 
 /**
  * reflector.ts implements static reflection of declarations using the TypeScript `ts.TypeChecker`.
@@ -25,17 +26,17 @@ export class TypeScriptReflectionHost implements ReflectionHost {
         .filter((dec): dec is Decorator => dec !== null);
   }
 
-  getMembersOfClass(declaration: ts.Declaration): ClassMember[] {
-    const clazz = castDeclarationToClassOrDie(declaration);
-    return clazz.members.map(member => this._reflectMember(member))
+  getMembersOfClass(clazz: ClassDeclaration): ClassMember[] {
+    const tsClazz = castDeclarationToClassOrDie(clazz);
+    return tsClazz.members.map(member => this._reflectMember(member))
         .filter((member): member is ClassMember => member !== null);
   }
 
-  getConstructorParameters(declaration: ts.Declaration): CtorParameter[]|null {
-    const clazz = castDeclarationToClassOrDie(declaration);
+  getConstructorParameters(clazz: ClassDeclaration): CtorParameter[]|null {
+    const tsClazz = castDeclarationToClassOrDie(clazz);
 
     // First, find the constructor.
-    const ctor = clazz.members.find(ts.isConstructorDeclaration);
+    const ctor = tsClazz.members.find(ts.isConstructorDeclaration);
     if (ctor === undefined) {
       return null;
     }
@@ -48,7 +49,7 @@ export class TypeScriptReflectionHost implements ReflectionHost {
 
       // It may or may not be possible to write an expression that refers to the value side of the
       // type named for the parameter.
-      let typeValueExpr: ts.Expression|null = null;
+
       let originalTypeNode = node.type || null;
       let typeNode = originalTypeNode;
 
@@ -67,24 +68,11 @@ export class TypeScriptReflectionHost implements ReflectionHost {
         }
       }
 
-      // It's not possible to get a value expression if the parameter doesn't even have a type.
-      if (typeNode) {
-        // It's only valid to convert a type reference to a value reference if the type actually has
-        // a value declaration associated with it.
-        let type: ts.Type|null = this.checker.getTypeFromTypeNode(typeNode);
-
-        if (type && type.symbol !== undefined && type.symbol.valueDeclaration !== undefined) {
-          // The type points to a valid value declaration. Rewrite the TypeReference into an
-          // Expression
-          // which references the value pointed to by the TypeReference, if possible.
-          typeValueExpr = typeNodeToValueExpr(typeNode);
-        }
-      }
+      const typeValueReference = typeToValue(typeNode, this.checker);
 
       return {
         name,
-        nameNode: node.name,
-        typeExpression: typeValueExpr,
+        nameNode: node.name, typeValueReference,
         typeNode: originalTypeNode, decorators,
       };
     });
@@ -145,14 +133,15 @@ export class TypeScriptReflectionHost implements ReflectionHost {
     return map;
   }
 
-  isClass(node: ts.Node): node is ts.NamedDeclaration {
+  isClass(node: ts.Node): node is ClassDeclaration {
     // In TypeScript code, classes are ts.ClassDeclarations.
-    return ts.isClassDeclaration(node);
+    // (`name` can be undefined in unnamed default exports: `default export class { ... }`)
+    return ts.isClassDeclaration(node) && (node.name !== undefined) && ts.isIdentifier(node.name);
   }
 
-  hasBaseClass(node: ts.Declaration): boolean {
-    return ts.isClassDeclaration(node) && node.heritageClauses !== undefined &&
-        node.heritageClauses.some(clause => clause.token === ts.SyntaxKind.ExtendsKeyword);
+  hasBaseClass(clazz: ClassDeclaration): boolean {
+    return ts.isClassDeclaration(clazz) && clazz.heritageClauses !== undefined &&
+        clazz.heritageClauses.some(clause => clause.token === ts.SyntaxKind.ExtendsKeyword);
   }
 
   getDeclarationOfIdentifier(id: ts.Identifier): Declaration|null {
@@ -177,7 +166,7 @@ export class TypeScriptReflectionHost implements ReflectionHost {
     };
   }
 
-  getGenericArityOfClass(clazz: ts.Declaration): number|null {
+  getGenericArityOfClass(clazz: ClassDeclaration): number|null {
     if (!ts.isClassDeclaration(clazz)) {
       return null;
     }
@@ -196,6 +185,16 @@ export class TypeScriptReflectionHost implements ReflectionHost {
    * @internal
    */
   protected getDeclarationOfSymbol(symbol: ts.Symbol): Declaration|null {
+    // If the symbol points to a ShorthandPropertyAssignment, resolve it.
+    if (symbol.valueDeclaration !== undefined &&
+        ts.isShorthandPropertyAssignment(symbol.valueDeclaration)) {
+      const shorthandSymbol =
+          this.checker.getShorthandAssignmentValueSymbol(symbol.valueDeclaration);
+      if (shorthandSymbol === undefined) {
+        return null;
+      }
+      return this.getDeclarationOfSymbol(shorthandSymbol);
+    }
     let viaModule: string|null = null;
     // Look through the Symbol's immediate declarations, and see if any of them are import-type
     // statements.
@@ -420,7 +419,8 @@ export function reflectObjectLiteral(node: ts.ObjectLiteralExpression): Map<stri
   return map;
 }
 
-function castDeclarationToClassOrDie(declaration: ts.Declaration): ts.ClassDeclaration {
+function castDeclarationToClassOrDie(declaration: ClassDeclaration):
+    ClassDeclaration<ts.ClassDeclaration> {
   if (!ts.isClassDeclaration(declaration)) {
     throw new Error(
         `Reflecting on a ${ts.SyntaxKind[declaration.kind]} instead of a ClassDeclaration.`);
@@ -431,25 +431,6 @@ function castDeclarationToClassOrDie(declaration: ts.Declaration): ts.ClassDecla
 function parameterName(name: ts.BindingName): string|null {
   if (ts.isIdentifier(name)) {
     return name.text;
-  } else {
-    return null;
-  }
-}
-
-export function typeNodeToValueExpr(node: ts.TypeNode): ts.Expression|null {
-  if (ts.isTypeReferenceNode(node)) {
-    return entityNameToValue(node.typeName);
-  } else {
-    return null;
-  }
-}
-
-function entityNameToValue(node: ts.EntityName): ts.Expression|null {
-  if (ts.isQualifiedName(node)) {
-    const left = entityNameToValue(node.left);
-    return left !== null ? ts.createPropertyAccess(left, node.right) : null;
-  } else if (ts.isIdentifier(node)) {
-    return ts.getMutableClone(node);
   } else {
     return null;
   }

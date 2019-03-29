@@ -31,6 +31,8 @@ export class Identifiers {
 
   static elementProperty: o.ExternalReference = {name: 'ɵelementProperty', moduleName: CORE};
 
+  static select: o.ExternalReference = {name: 'ɵselect', moduleName: CORE};
+
   static componentHostSyntheticProperty:
       o.ExternalReference = {name: 'ɵcomponentHostSyntheticProperty', moduleName: CORE};
 
@@ -49,14 +51,28 @@ export class Identifiers {
 
   static elementStyling: o.ExternalReference = {name: 'ɵelementStyling', moduleName: CORE};
 
-  static elementHostAttrs: o.ExternalReference = {name: 'ɵelementHostAttrs', moduleName: CORE};
-
   static elementStylingMap: o.ExternalReference = {name: 'ɵelementStylingMap', moduleName: CORE};
 
   static elementStyleProp: o.ExternalReference = {name: 'ɵelementStyleProp', moduleName: CORE};
 
   static elementStylingApply:
       o.ExternalReference = {name: 'ɵelementStylingApply', moduleName: CORE};
+
+  static elementHostAttrs: o.ExternalReference = {name: 'ɵelementHostAttrs', moduleName: CORE};
+
+  static elementHostStyling: o.ExternalReference = {name: 'ɵelementHostStyling', moduleName: CORE};
+
+  static elementHostStylingMap:
+      o.ExternalReference = {name: 'ɵelementHostStylingMap', moduleName: CORE};
+
+  static elementHostStyleProp:
+      o.ExternalReference = {name: 'ɵelementHostStyleProp', moduleName: CORE};
+
+  static elementHostClassProp:
+      o.ExternalReference = {name: 'ɵelementHostClassProp', moduleName: CORE};
+
+  static elementHostStylingApply:
+      o.ExternalReference = {name: 'ɵelementHostStylingApply', moduleName: CORE};
 
   static containerCreate: o.ExternalReference = {name: 'ɵcontainer', moduleName: CORE};
 
@@ -116,7 +132,6 @@ export class Identifiers {
   static i18nPostprocess: o.ExternalReference = {name: 'ɵi18nPostprocess', moduleName: CORE};
 
   static load: o.ExternalReference = {name: 'ɵload', moduleName: CORE};
-  static loadQueryList: o.ExternalReference = {name: 'ɵloadQueryList', moduleName: CORE};
 
   static pipe: o.ExternalReference = {name: 'ɵpipe', moduleName: CORE};
 
@@ -146,6 +161,8 @@ export class Identifiers {
   };
 
   static defineComponent: o.ExternalReference = {name: 'ɵdefineComponent', moduleName: CORE};
+
+  static setComponentScope: o.ExternalReference = {name: 'ɵsetComponentScope', moduleName: CORE};
 
   static ComponentDefWithMeta: o.ExternalReference = {
     name: 'ɵComponentDefWithMeta',
@@ -183,10 +200,15 @@ export class Identifiers {
 
   static definePipe: o.ExternalReference = {name: 'ɵdefinePipe', moduleName: CORE};
 
-  static query: o.ExternalReference = {name: 'ɵquery', moduleName: CORE};
   static queryRefresh: o.ExternalReference = {name: 'ɵqueryRefresh', moduleName: CORE};
-  static registerContentQuery:
-      o.ExternalReference = {name: 'ɵregisterContentQuery', moduleName: CORE};
+  static viewQuery: o.ExternalReference = {name: 'ɵviewQuery', moduleName: CORE};
+  static staticViewQuery: o.ExternalReference = {name: 'ɵstaticViewQuery', moduleName: CORE};
+  static staticContentQuery: o.ExternalReference = {name: 'ɵstaticContentQuery', moduleName: CORE};
+  static loadViewQuery: o.ExternalReference = {name: 'ɵloadViewQuery', moduleName: CORE};
+  static contentQuery: o.ExternalReference = {name: 'ɵcontentQuery', moduleName: CORE};
+  static loadContentQuery: o.ExternalReference = {name: 'ɵloadContentQuery', moduleName: CORE};
+
+  static NgOnChangesFeature: o.ExternalReference = {name: 'ɵNgOnChangesFeature', moduleName: CORE};
 
   static InheritDefinitionFeature:
       o.ExternalReference = {name: 'ɵInheritDefinitionFeature', moduleName: CORE};

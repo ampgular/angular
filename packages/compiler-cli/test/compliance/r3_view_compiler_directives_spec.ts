@@ -130,7 +130,7 @@ describe('compiler compliance: directives', () => {
       // MyComponent definition should be:
       const MyComponentDefinition = `
                 …
-                const _c0 = [${AttributeMarker.SelectOnly}, "someDirective"];
+                const _c0 = [${AttributeMarker.Bindings}, "someDirective"];
                 …
                 MyComponent.ngComponentDef = $r3$.ɵdefineComponent({
                     …
@@ -139,6 +139,7 @@ describe('compiler compliance: directives', () => {
                             $r3$.ɵelement(0, "div", _c0);
                         }
                         if (rf & 2) {
+                            $r3$.ɵselect(0);
                             $r3$.ɵelementProperty(0, "someDirective", $r3$.ɵbind(true));
                         }
                     },
@@ -236,7 +237,7 @@ describe('compiler compliance: directives', () => {
 
       const MyComponentDefinition = `
         …
-        const $_c0$ = [${AttributeMarker.SelectOnly}, "ngIf"];
+        const $_c0$ = ["directiveA", "", ${AttributeMarker.Template}, "ngIf"];
         const $_c1$ = ["directiveA", ""];
         function MyComponent_ng_container_0_Template(rf, ctx) {
           if (rf & 1) {
@@ -253,6 +254,7 @@ describe('compiler compliance: directives', () => {
               $r3$.ɵtemplate(0, MyComponent_ng_container_0_Template, 2, 0, "ng-container", $_c0$);
             }
             if (rf & 2) {
+              $r3$.ɵselect(0);
               $r3$.ɵelementProperty(0, "ngIf", $r3$.ɵbind(ctx.showing));
             }
           },
@@ -291,7 +293,7 @@ describe('compiler compliance: directives', () => {
       // MyComponent definition should be:
       const MyComponentDefinition = `
                 …
-                const $c0_a0$ = [${AttributeMarker.SelectOnly}, "someDirective"];
+                const $c0_a0$ = [${AttributeMarker.Bindings}, "someDirective"];
                 …
                 MyComponent.ngComponentDef = $r3$.ɵdefineComponent({
                     …
@@ -300,6 +302,7 @@ describe('compiler compliance: directives', () => {
                             $r3$.ɵtemplate(0, MyComponent_ng_template_0_Template, 0, 0, "ng-template", $c0_a0$);
                         }
                         if (rf & 2) {
+                            $r3$.ɵselect(0);
                             $r3$.ɵelementProperty(0, "someDirective", $r3$.ɵbind(true));
                         }
                     },
@@ -339,7 +342,7 @@ describe('compiler compliance: directives', () => {
       // MyComponent definition should be:
       const MyComponentDefinition = `
                 …
-                const $c0_a0$ = ["someDirective", ""];
+                const $c0_a0$ = [${AttributeMarker.Template}, "someDirective"];
                 …
                 MyComponent.ngComponentDef = $r3$.ɵdefineComponent({
                     …
@@ -388,7 +391,7 @@ describe('compiler compliance: directives', () => {
       // MyComponent definition should be:
       const MyComponentDefinition = `
                 …
-                const $c0_a0$ = [${AttributeMarker.SelectOnly}, "someDirective"];
+                const $c0_a0$ = [${AttributeMarker.Bindings}, "someDirective"];
                 …
                 MyComponent.ngComponentDef = $r3$.ɵdefineComponent({
                     …

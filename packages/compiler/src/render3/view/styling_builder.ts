@@ -16,6 +16,7 @@ import {Identifiers as R3} from '../r3_identifiers';
 import {parse as parseStyle} from './style_parser';
 import {ValueConverter} from './template';
 
+const IMPORTANT_FLAG = '!important';
 
 /**
  * A styling expression summary that is to be processed by the compiler
@@ -31,7 +32,8 @@ export interface Instruction {
  * An internal record of the input data for a styling binding
  */
 interface BoundStylingEntry {
-  name: string;
+  hasOverrideFlag: boolean;
+  name: string|null;
   unit: string|null;
   sourceSpan: ParseSourceSpan;
   value: AST;
@@ -123,51 +125,70 @@ export class StylingBuilder {
     // will therefore skip all style/class resolution that is present
     // with style="", [style]="" and [style.prop]="", class="",
     // [class.prop]="". [class]="" assignments
-    const name = input.name;
     let binding: BoundStylingEntry|null = null;
+    let name = input.name;
     switch (input.type) {
       case BindingType.Property:
-        if (name == 'style') {
-          binding = this.registerStyleInput(null, input.value, '', input.sourceSpan);
-        } else if (isClassBinding(input.name)) {
-          binding = this.registerClassInput(null, input.value, input.sourceSpan);
-        }
+        binding = this.registerInputBasedOnName(name, input.value, input.sourceSpan);
         break;
       case BindingType.Style:
-        binding = this.registerStyleInput(input.name, input.value, input.unit, input.sourceSpan);
+        binding = this.registerStyleInput(name, false, input.value, input.sourceSpan, input.unit);
         break;
       case BindingType.Class:
-        binding = this.registerClassInput(input.name, input.value, input.sourceSpan);
+        binding = this.registerClassInput(name, false, input.value, input.sourceSpan);
         break;
     }
     return binding ? true : false;
   }
 
+  registerInputBasedOnName(name: string, expression: AST, sourceSpan: ParseSourceSpan) {
+    let binding: BoundStylingEntry|null = null;
+    const nameToMatch = name.substring(0, 5);  // class | style
+    const isStyle = nameToMatch === 'style';
+    const isClass = isStyle ? false : (nameToMatch === 'class');
+    if (isStyle || isClass) {
+      const isMapBased = name.charAt(5) !== '.';         // style.prop or class.prop makes this a no
+      const property = name.substr(isMapBased ? 5 : 6);  // the dot explains why there's a +1
+      if (isStyle) {
+        binding = this.registerStyleInput(property, isMapBased, expression, sourceSpan);
+      } else {
+        binding = this.registerClassInput(property, isMapBased, expression, sourceSpan);
+      }
+    }
+    return binding;
+  }
+
   registerStyleInput(
-      propertyName: string|null, value: AST, unit: string|null,
-      sourceSpan: ParseSourceSpan): BoundStylingEntry {
-    const entry = { name: propertyName, unit, value, sourceSpan } as BoundStylingEntry;
-    if (propertyName) {
-      (this._singleStyleInputs = this._singleStyleInputs || []).push(entry);
-      this._useDefaultSanitizer = this._useDefaultSanitizer || isStyleSanitizable(propertyName);
-      registerIntoMap(this._stylesIndex, propertyName);
-    } else {
+      name: string, isMapBased: boolean, value: AST, sourceSpan: ParseSourceSpan,
+      unit?: string|null): BoundStylingEntry {
+    const {property, hasOverrideFlag, unit: bindingUnit} = parseProperty(name);
+    const entry: BoundStylingEntry = {
+      name: property,
+      unit: unit || bindingUnit, value, sourceSpan, hasOverrideFlag
+    };
+    if (isMapBased) {
       this._useDefaultSanitizer = true;
       this._styleMapInput = entry;
+    } else {
+      (this._singleStyleInputs = this._singleStyleInputs || []).push(entry);
+      this._useDefaultSanitizer = this._useDefaultSanitizer || isStyleSanitizable(name);
+      registerIntoMap(this._stylesIndex, property);
     }
     this._lastStylingInput = entry;
     this.hasBindings = true;
     return entry;
   }
 
-  registerClassInput(className: string|null, value: AST, sourceSpan: ParseSourceSpan):
+  registerClassInput(name: string, isMapBased: boolean, value: AST, sourceSpan: ParseSourceSpan):
       BoundStylingEntry {
-    const entry = { name: className, value, sourceSpan } as BoundStylingEntry;
-    if (className) {
-      (this._singleClassInputs = this._singleClassInputs || []).push(entry);
-      registerIntoMap(this._classesIndex, className);
-    } else {
+    const {property, hasOverrideFlag} = parseProperty(name);
+    const entry:
+        BoundStylingEntry = {name: property, value, sourceSpan, hasOverrideFlag, unit: null};
+    if (isMapBased) {
       this._classMapInput = entry;
+    } else {
+      (this._singleClassInputs = this._singleClassInputs || []).push(entry);
+      registerIntoMap(this._classesIndex, property);
     }
     this._lastStylingInput = entry;
     this.hasBindings = true;
@@ -235,8 +256,12 @@ export class StylingBuilder {
         reference: R3.elementHostAttrs,
         allocateBindingSlots: 0,
         buildParams: () => {
+          // params => elementHostAttrs(agetDirectiveContext()ttrs)
           this.populateInitialStylingAttrs(attrs);
-          return [this._directiveExpr !, getConstantLiteralFromArray(constantPool, attrs)];
+          const attrArray = !attrs.some(attr => attr instanceof o.WrappedNodeExpr) ?
+              getConstantLiteralFromArray(constantPool, attrs) :
+              o.literalArr(attrs);
+          return [attrArray];
         }
       };
     }
@@ -251,11 +276,11 @@ export class StylingBuilder {
    */
   buildElementStylingInstruction(sourceSpan: ParseSourceSpan|null, constantPool: ConstantPool):
       Instruction|null {
+    const reference = this._directiveExpr ? R3.elementHostStyling : R3.elementStyling;
     if (this.hasBindings) {
       return {
         sourceSpan,
-        allocateBindingSlots: 0,
-        reference: R3.elementStyling,
+        allocateBindingSlots: 0, reference,
         buildParams: () => {
           // a string array of every style-based binding
           const styleBindingProps =
@@ -270,12 +295,17 @@ export class StylingBuilder {
           // (otherwise a shorter amount of params will be filled). The code below helps
           // determine how many params are required in the expression code.
           //
-          // min params => elementStyling()
-          // max params => elementStyling(classBindings, styleBindings, sanitizer, directive)
+          // HOST:
+          //   min params => elementHostStyling()
+          //   max params => elementHostStyling(classBindings, styleBindings, sanitizer)
+          //
+          // Template:
+          //   min params => elementStyling()
+          //   max params => elementStyling(classBindings, styleBindings, sanitizer)
+          //
+          const params: o.Expression[] = [];
           let expectedNumberOfArgs = 0;
-          if (this._directiveExpr) {
-            expectedNumberOfArgs = 4;
-          } else if (this._useDefaultSanitizer) {
+          if (this._useDefaultSanitizer) {
             expectedNumberOfArgs = 3;
           } else if (styleBindingProps.length) {
             expectedNumberOfArgs = 2;
@@ -283,7 +313,6 @@ export class StylingBuilder {
             expectedNumberOfArgs = 1;
           }
 
-          const params: o.Expression[] = [];
           addParam(
               params, classBindingNames.length > 0,
               getConstantLiteralFromArray(constantPool, classBindingNames), 1,
@@ -295,9 +324,6 @@ export class StylingBuilder {
           addParam(
               params, this._useDefaultSanitizer, o.importExpr(R3.defaultStyleSanitizer), 3,
               expectedNumberOfArgs);
-          if (this._directiveExpr) {
-            params.push(this._directiveExpr);
-          }
           return params;
         }
       };
@@ -332,29 +358,40 @@ export class StylingBuilder {
         totalBindingSlotsRequired += mapBasedStyleValue.expressions.length;
       }
 
+      const isHostBinding = this._directiveExpr;
+      const reference = isHostBinding ? R3.elementHostStylingMap : R3.elementStylingMap;
+
       return {
         sourceSpan: stylingInput.sourceSpan,
-        reference: R3.elementStylingMap,
+        reference,
         allocateBindingSlots: totalBindingSlotsRequired,
         buildParams: (convertFn: (value: any) => o.Expression) => {
-          const params: o.Expression[] = [this._elementIndexExpr];
+          // HOST:
+          //   min params => elementHostStylingMap(classMap)
+          //   max params => elementHostStylingMap(classMap, styleMap)
+          // Template:
+          //   min params => elementStylingMap(elmIndex, classMap)
+          //   max params => elementStylingMap(elmIndex, classMap, styleMap)
 
-          if (mapBasedClassValue) {
-            params.push(convertFn(mapBasedClassValue));
-          } else if (this._styleMapInput) {
-            params.push(o.NULL_EXPR);
+          const params: o.Expression[] = [];
+          if (!isHostBinding) {
+            params.push(this._elementIndexExpr);
           }
 
+          let expectedNumberOfArgs = 0;
           if (mapBasedStyleValue) {
-            params.push(convertFn(mapBasedStyleValue));
-          } else if (this._directiveExpr) {
-            params.push(o.NULL_EXPR);
+            expectedNumberOfArgs = 2;
+          } else if (mapBasedClassValue) {
+            // index and class = 2
+            expectedNumberOfArgs = 1;
           }
 
-          if (this._directiveExpr) {
-            params.push(this._directiveExpr);
-          }
-
+          addParam(
+              params, mapBasedClassValue, mapBasedClassValue ? convertFn(mapBasedClassValue) : null,
+              1, expectedNumberOfArgs);
+          addParam(
+              params, mapBasedStyleValue, mapBasedStyleValue ? convertFn(mapBasedStyleValue) : null,
+              2, expectedNumberOfArgs);
           return params;
         }
       };
@@ -363,29 +400,45 @@ export class StylingBuilder {
   }
 
   private _buildSingleInputs(
-      reference: o.ExternalReference, inputs: BoundStylingEntry[], mapIndex: Map<string, number>,
-      allowUnits: boolean, valueConverter: ValueConverter): Instruction[] {
+      reference: o.ExternalReference, isHostBinding: boolean, inputs: BoundStylingEntry[],
+      mapIndex: Map<string, number>, allowUnits: boolean,
+      valueConverter: ValueConverter): Instruction[] {
     let totalBindingSlotsRequired = 0;
     return inputs.map(input => {
-      const bindingIndex: number = mapIndex.get(input.name) !;
+      const bindingIndex: number = mapIndex.get(input.name !) !;
       const value = input.value.visit(valueConverter);
       totalBindingSlotsRequired += (value instanceof Interpolation) ? value.expressions.length : 0;
       return {
         sourceSpan: input.sourceSpan,
         allocateBindingSlots: totalBindingSlotsRequired, reference,
         buildParams: (convertFn: (value: any) => o.Expression) => {
-          const params = [this._elementIndexExpr, o.literal(bindingIndex), convertFn(value)];
+          // HOST:
+          //   min params => elementHostStylingProp(bindingIndex, value)
+          //   max params => elementHostStylingProp(bindingIndex, value, overrideFlag)
+          // Template:
+          //   min params => elementStylingProp(elmIndex, bindingIndex, value)
+          //   max params => elementStylingProp(elmIndex, bindingIndex, value, overrideFlag)
+          const params: o.Expression[] = [];
+
+          if (!isHostBinding) {
+            params.push(this._elementIndexExpr);
+          }
+
+          params.push(o.literal(bindingIndex));
+          params.push(convertFn(value));
+
           if (allowUnits) {
             if (input.unit) {
               params.push(o.literal(input.unit));
-            } else if (this._directiveExpr) {
+            } else if (input.hasOverrideFlag) {
               params.push(o.NULL_EXPR);
             }
           }
 
-          if (this._directiveExpr) {
-            params.push(this._directiveExpr);
+          if (input.hasOverrideFlag) {
+            params.push(o.literal(true));
           }
+
           return params;
         }
       };
@@ -394,31 +447,39 @@ export class StylingBuilder {
 
   private _buildClassInputs(valueConverter: ValueConverter): Instruction[] {
     if (this._singleClassInputs) {
+      const isHostBinding = !!this._directiveExpr;
+      const reference = isHostBinding ? R3.elementHostClassProp : R3.elementClassProp;
       return this._buildSingleInputs(
-          R3.elementClassProp, this._singleClassInputs, this._classesIndex, false, valueConverter);
+          reference, isHostBinding, this._singleClassInputs, this._classesIndex, false,
+          valueConverter);
     }
     return [];
   }
 
   private _buildStyleInputs(valueConverter: ValueConverter): Instruction[] {
     if (this._singleStyleInputs) {
+      const isHostBinding = !!this._directiveExpr;
+      const reference = isHostBinding ? R3.elementHostStyleProp : R3.elementStyleProp;
       return this._buildSingleInputs(
-          R3.elementStyleProp, this._singleStyleInputs, this._stylesIndex, true, valueConverter);
+          reference, isHostBinding, this._singleStyleInputs, this._stylesIndex, true,
+          valueConverter);
     }
     return [];
   }
 
   private _buildApplyFn(): Instruction {
+    const isHostBinding = this._directiveExpr;
+    const reference = isHostBinding ? R3.elementHostStylingApply : R3.elementStylingApply;
     return {
       sourceSpan: this._lastStylingInput ? this._lastStylingInput.sourceSpan : null,
-      reference: R3.elementStylingApply,
+      reference,
       allocateBindingSlots: 0,
       buildParams: () => {
-        const params: o.Expression[] = [this._elementIndexExpr];
-        if (this._directiveExpr) {
-          params.push(this._directiveExpr);
-        }
-        return params;
+        // HOST:
+        //   params => elementHostStylingApply()
+        // Template:
+        //   params => elementStylingApply(elmIndex)
+        return isHostBinding ? [] : [this._elementIndexExpr];
       }
     };
   }
@@ -440,10 +501,6 @@ export class StylingBuilder {
     }
     return instructions;
   }
-}
-
-function isClassBinding(name: string): boolean {
-  return name == 'className' || name == 'class';
 }
 
 function registerIntoMap(map: Map<string, number>, key: string) {
@@ -471,11 +528,31 @@ function getConstantLiteralFromArray(
  * predicate and totalExpectedArgs values
  */
 function addParam(
-    params: o.Expression[], predicate: boolean, value: o.Expression, argNumber: number,
+    params: o.Expression[], predicate: any, value: o.Expression | null, argNumber: number,
     totalExpectedArgs: number) {
-  if (predicate) {
+  if (predicate && value) {
     params.push(value);
   } else if (argNumber < totalExpectedArgs) {
     params.push(o.NULL_EXPR);
   }
+}
+
+export function parseProperty(name: string):
+    {property: string, unit: string, hasOverrideFlag: boolean} {
+  let hasOverrideFlag = false;
+  const overrideIndex = name.indexOf(IMPORTANT_FLAG);
+  if (overrideIndex !== -1) {
+    name = overrideIndex > 0 ? name.substring(0, overrideIndex) : '';
+    hasOverrideFlag = true;
+  }
+
+  let unit = '';
+  let property = name;
+  const unitIndex = name.lastIndexOf('.');
+  if (unitIndex > 0) {
+    unit = name.substr(unitIndex + 1);
+    property = name.substring(0, unitIndex);
+  }
+
+  return {property, unit, hasOverrideFlag};
 }
